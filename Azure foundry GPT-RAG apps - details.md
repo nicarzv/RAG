@@ -385,3 +385,368 @@ These flags in `main.parameters.json` control what gets deployed:
 - **Zero-Trust** — all services behind private endpoints, all auth via RBAC, fail-closed queries
 - **Horizontal scaling** — Container Apps can scale 1→N replicas (currently set to 1)
 - **Dapr sidecar** — enables service discovery and invocation between Container Apps
+
+---
+
+## 11. Per-App Implementation Architecture
+
+> Details from each component repository — relevant for the implementation/development team.
+
+---
+
+### 11.1 Orchestrator — Internal Architecture
+
+| Property | Value |
+|----------|-------|
+| **Language** | Python 3.12 |
+| **Framework** | FastAPI 0.115.12 + Uvicorn |
+| **AI Framework** | Semantic Kernel 1.34.0 (with MCP support) |
+| **Docker base** | `python:3.12-slim` |
+| **Entry point** | `uvicorn main:app --host 0.0.0.0 --port 8080` |
+| **Key deps** | `azure-ai-agents`, `azure-ai-projects`, `openai`, `tiktoken`, `pydantic`, `PyJWT`, `Jinja2`, `pyodbc` |
+
+**Module Structure:**
+
+```
+gpt-rag-orchestrator/src/
+├── main.py                  # FastAPI app, POST /orchestrator (SSE streaming)
+├── orchestration/
+│   └── orchestrator.py      # Conversation lifecycle, Cosmos DB persistence
+├── strategies/
+│   ├── agent_strategy_factory.py   # Factory: selects strategy from AGENT_STRATEGY
+│   ├── base_agent_strategy.py      # Abstract base: credentials, prompt loading
+│   ├── single_agent_rag_strategy_v2.py  # Azure AI Agents API (default)
+│   ├── single_agent_rag_strategy_v1.py  # Legacy implementation
+│   ├── mcp_strategy.py             # Semantic Kernel + MCPSsePlugin
+│   └── nl2sql_strategy.py          # 3-agent group: Triage → SQL → Synthesizer
+├── connectors/
+│   ├── appconfig.py         # App Configuration (4-level label precedence)
+│   ├── aifoundry.py         # GenAI client (chat + embeddings)
+│   ├── search.py            # Azure AI Search (hybrid/vector/BM25)
+│   ├── cosmosdb.py          # Cosmos DB client (conversations, prompts)
+│   ├── keyvault.py          # Key Vault secrets
+│   ├── sqldbs.py            # SQL DB for NL2SQL (pyodbc)
+│   └── identity_manager.py  # Singleton: ChainedTokenCredential
+├── plugins/
+│   ├── retrieval/plugin.py  # SK tool: vector/hybrid search
+│   ├── nl2sql/plugin.py     # SK tools: GetAllTables, ExecuteQuery, etc.
+│   └── common/plugin.py     # Shared utilities
+└── prompts/
+    ├── single_agent_rag/    # System prompts for default strategy
+    ├── mcp/main.txt         # MCP strategy prompt
+    └── nl2sql/              # triage_agent.txt, sqlquery_agent.txt, syntetizer_agent.txt
+```
+
+**Request Flow:**
+
+```mermaid
+graph TD
+    A[POST /orchestrator] --> B[Auth: API Key + JWT]
+    B --> C[Orchestrator.stream_response]
+    C --> D[Load conversation from Cosmos DB]
+    D --> E{AGENT_STRATEGY}
+    E -->|single_agent_rag| F[Azure AI Agents API]
+    E -->|mcp| G[Semantic Kernel + MCP Plugin]
+    E -->|nl2sql| H[3-Agent Group Chat]
+    F --> I[Search Plugin → AI Search]
+    G --> J[MCP Server via SSE]
+    H --> K[SQL Plugin → Fabric DB]
+    I --> L[LLM: gpt-4o]
+    J --> L
+    K --> L
+    L --> M[SSE Stream → Frontend]
+    M --> N[Save to Cosmos DB]
+```
+
+**Key Implementation Details:**
+
+- **Single endpoint:** `POST /orchestrator` returns Server-Sent Events (SSE)
+- **Dual auth:** Validates both API key (`dapr-api-token` / `X-API-KEY`) and JWT (Entra ID)
+- **App Config label precedence:** `orchestrator` → `gpt-rag-orchestrator` → `gpt-rag` → `<no-label>`
+- **Prompt loading:** From filesystem (`prompts/` directory) or Cosmos DB (`prompts` container), configurable via `PROMPT_SOURCE`
+- **Jinja2 templates:** Dynamic prompt rendering with runtime context variables
+- **Cold-start optimization:** Lifespan hook pre-warms Azure clients, identity manager, and AI agent
+- **Token counting:** Uses `tiktoken` to truncate context within model limits (128K tokens for gpt-4o)
+- **OBO flow:** On-behalf-of token acquisition for delegated AI Search access with user permissions
+- **ODBC Driver 18:** Installed in Docker for SQL Server connectivity (NL2SQL strategy)
+
+**Agent Strategies Comparison:**
+
+| Strategy | API | Agents | Tools | Use Case |
+|----------|-----|--------|-------|----------|
+| `single_agent_rag` (v2) | Azure AI Agents | 1 persistent | Search, Bing (optional) | Default: RAG over SharePoint |
+| `single_agent_rag_v1` | Legacy Agents | 1 | Search | Backward compatibility |
+| `mcp` | Semantic Kernel | 1 + MCP tools | Via MCP server | External tool integration |
+| `nl2sql` | Semantic Kernel | 3 (Triage, SQL, Synth) | SQL execution, table lookup | Database Q&A |
+
+---
+
+### 11.2 Ingestion — Internal Architecture
+
+| Property | Value |
+|----------|-------|
+| **Language** | Python 3.12 |
+| **Framework** | FastAPI 0.115.12 + Uvicorn |
+| **Scheduler** | APScheduler 3.11.0 (cron-based) |
+| **Docker base** | `mcr.microsoft.com/devcontainers/python:3.12-bookworm` |
+| **Entry point** | `uvicorn main:app --host 0.0.0.0 --port 8080` |
+| **Key deps** | `msgraph-sdk`, `langchain-text-splitters`, `openpyxl`, `Pillow`, `webvtt-py`, `tiktoken` |
+
+**Module Structure:**
+
+```
+gpt-rag-ingestion/
+├── main.py                  # FastAPI app + APScheduler setup
+├── dependencies.py          # API key validation
+├── chunking/
+│   ├── document_chunking.py       # Main entry: DocumentChunker.chunk_documents()
+│   ├── chunker_factory.py         # Selects chunker by file extension
+│   ├── base_chunker.py            # Base: create_chunk(), embeddings, truncation
+│   ├── doc_analysis_chunker.py    # Document Intelligence (PDF, images)
+│   ├── multimodal_chunker.py      # Text + figure extraction
+│   ├── langchain_chunker.py       # Generic: markdown, text, html, python, csv, xml
+│   ├── spreadsheet_chunker.py     # Excel via openpyxl
+│   ├── transcription_chunker.py   # WebVTT files
+│   ├── json_chunker.py            # JSON documents
+│   └── nl2sql_chunker.py          # SQL query/result pairs
+├── jobs/
+│   ├── sharepoint_indexer.py      # SharePoint → AI Search pipeline
+│   ├── sharepoint_purger.py       # Remove deleted SP items from index
+│   ├── blob_storage_indexer.py    # Blob Storage → AI Search pipeline
+│   └── nl2sql_indexer.py          # NL2SQL data indexing
+└── tools/
+    ├── aisearch.py          # AI Search async client
+    ├── aoai.py              # Azure OpenAI embeddings (with retry/backoff)
+    ├── blob.py              # Blob Storage client
+    ├── cosmosdb.py          # Cosmos DB (site configs)
+    ├── doc_intelligence.py  # Document Intelligence (Form Recognizer)
+    ├── keyvault.py          # Key Vault secrets
+    └── sharepoint.py        # SharePoint Graph API client
+```
+
+**Processing Pipeline:**
+
+```mermaid
+graph TD
+    A[Scheduled Job Trigger] --> B{Source Type}
+    B -->|SharePoint| C[Graph API: list sites/libraries]
+    B -->|Blob Storage| D[Enumerate blob container]
+    C --> E[Download documents]
+    D --> E
+    E --> F[ChunkerFactory: select by extension]
+    F -->|pdf,png,jpg| G[DocAnalysis or Multimodal]
+    F -->|xlsx,xls| H[SpreadsheetChunker]
+    F -->|md,txt,html,py,csv| I[LangChainChunker]
+    F -->|vtt| J[TranscriptionChunker]
+    F -->|json| K[JSONChunker]
+    G --> L[Generate embeddings]
+    H --> L
+    I --> L
+    J --> L
+    K --> L
+    L --> M[Extract ACL metadata]
+    M --> N[Upload to AI Search index]
+```
+
+**Key Implementation Details:**
+
+- **Cron-based scheduling:** APScheduler runs indexer + purger jobs on configurable cron expressions
+- **Default schedule:** Blob indexer hourly (`0 * * * *`), purger 10 min after (`10 * * * *`)
+- **SharePoint site config:** Stored in Cosmos DB `datasources` container as JSON documents
+- **Graph API auth:** Service principal client credentials (client_id + secret from Key Vault)
+- **Chunking defaults:** 2048 tokens max, 100 token overlap, 100 token minimum chunk size
+- **Embedding dimensions:** 3072 (text-embedding-3-large)
+- **Concurrency:** Configurable per indexer (default: 4 for SharePoint, 8 for blob)
+- **Batch size:** 500 documents per AI Search upload batch
+- **Rate limiting:** Exponential backoff for OpenAI (max 20 retries, 60s cap, jitter)
+- **ACL extraction:** From blob metadata (`metadata_security_user_ids`, `metadata_security_group_ids`) or SharePoint Graph API permissions
+- **RBAC scope:** Computed from storage account resource ID for blob-level access control
+
+**Supported Document Formats:**
+
+| Format | Chunker | Notes |
+|--------|---------|-------|
+| PDF | DocAnalysis / Multimodal | Document Intelligence service |
+| PNG, JPEG, BMP, TIFF | DocAnalysis / Multimodal | Image analysis |
+| DOCX, PPTX | DocAnalysis (4.0 API only) | Requires `DOC_INTELLIGENCE_API_VERSION >= 2023-10-31-preview` |
+| XLSX, XLS | SpreadsheetChunker | openpyxl, by-sheet or by-row |
+| MD, TXT | LangChain (Markdown/Recursive) | Standard text splitting |
+| HTML | LangChain (HTML) | HTML-aware splitting |
+| CSV | LangChain (CSV) | Delimiter-aware |
+| XML | LangChain (XML) | Tag-aware splitting |
+| Python (.py) | LangChain (Python) | Code-aware splitting |
+| JSON | JSONChunker | Structure-aware |
+| VTT | TranscriptionChunker | WebVTT captions |
+
+**HTTP Endpoints (besides scheduled jobs):**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/` | GET | Health check |
+| `/healthz` | GET | Liveness probe |
+| `/readyz` | GET | Readiness probe (checks App Config) |
+| `/document-chunking` | POST | On-demand chunking (API key protected) |
+| `/text-embedding` | POST | On-demand embedding generation |
+
+---
+
+### 11.3 Frontend (Web UI) — Internal Architecture
+
+| Property | Value |
+|----------|-------|
+| **Language** | Python 3.12 (backend) + React/JSX (frontend) |
+| **Framework** | FastAPI + **Chainlit 2.9.4** (chat UI framework) |
+| **Docker base** | `mcr.microsoft.com/devcontainers/python:3.12-bookworm` |
+| **Entry point** | `uvicorn main:app --host 0.0.0.0 --port 8080` |
+| **Key deps** | `chainlit`, `msal`, `httpx`, `azure-storage-blob`, `azure-identity` |
+| **Version** | 2.2.2 |
+
+**Module Structure:**
+
+```
+gpt-rag-ui/
+├── main.py                  # App initialization, auth state evaluation
+├── app.py                   # Chainlit event handlers (@cl.on_message, etc.)
+├── auth_oauth.py            # MSAL token refresh, JWT inspection
+├── orchestrator_client.py   # Async HTTP client for orchestrator (SSE streaming)
+├── feedback.py              # Feedback actions (thumbs up/down, star rating)
+├── dependencies.py          # Dependency injection
+├── constants.py             # UUID regex, constants
+├── telemetry.py             # Application Insights tracing
+├── connectors/
+│   ├── appconfig.py         # Azure App Configuration client
+│   └── blob.py              # Blob Storage (SAS URL generation)
+├── .chainlit/
+│   └── config.toml          # Chainlit config: theme, features, session timeout
+└── public/
+    ├── theme.json           # CSS variables (light/dark mode)
+    ├── custom.css           # Hide watermark, customize UI
+    ├── elements/
+    │   └── FeedbackForm.jsx # React component: 5-star rating + comments
+    ├── logo_light.png
+    ├── logo_dark.png
+    └── favicon.ico
+```
+
+**Chat Flow:**
+
+```mermaid
+graph TD
+    A[User sends message] --> B["@cl.on_message handler"]
+    B --> C[Validate auth / refresh token]
+    C --> D["call_orchestrator_stream()"]
+    D --> E{Transport}
+    E -->|Dapr| F["Dapr sidecar :3500"]
+    E -->|Direct| G[ORCHESTRATOR_BASE_URL]
+    F --> H[SSE response stream]
+    G --> H
+    H --> I[First chunk = conversation_id]
+    I --> J[Stream tokens to Chainlit UI]
+    J --> K[Resolve doc refs → SAS URLs]
+    K --> L[Create feedback actions]
+```
+
+**Key Implementation Details:**
+
+- **Chainlit 2.9.4:** Provides the full React-based chat UI out of the box — no custom frontend build needed
+- **Theme:** Configurable via `theme.json` (primary: blue, secondary: green, fonts: Inter + Source Code Pro)
+- **Auth modes:** OAuth (Entra ID via MSAL) or Anonymous (configurable via `ALLOW_ANONYMOUS`)
+- **Token refresh:** MSAL automatic refresh 120s before expiry; failed refresh forces re-login
+- **Orchestrator communication:** `httpx.AsyncClient.stream("POST", ...)` with 10s connect / 30s write timeout
+- **Dapr sidecar:** If Dapr available, routes to `127.0.0.1:3500` (Dapr HTTP proxy); otherwise direct HTTP
+- **Headers sent:** `Authorization: Bearer {token}`, `dapr-api-token`, `X-API-KEY`
+- **Feedback:** Optional (`ENABLE_USER_FEEDBACK`), supports thumbs up/down + 5-star rating with comments
+- **SAS URL generation:** Converts document references to time-limited SAS URLs for secure blob access
+- **Chainlit features:** Edit message enabled, file upload disabled, HTML rendering disabled, LaTeX disabled
+- **Session timeouts:** 1 hour session, 15-day user session
+
+---
+
+### 11.4 MCP Server — Internal Architecture
+
+| Property | Value |
+|----------|-------|
+| **Language** | Python 3.12 |
+| **Framework** | Starlette (ASGI) + **FastMCP** |
+| **Docker base** | `python:3.12-slim` |
+| **Entry point** | `uv run uvicorn src.server:app --host 0.0.0.0 --port 8080` |
+| **Package manager** | `uv` (not pip) |
+| **Key deps** | `mcp[cli] >= 1.21.0`, `fastapi >= 0.121.1`, `wikipedia >= 1.4.0` |
+| **Version** | 0.3.5 |
+
+**Module Structure:**
+
+```
+gpt-rag-mcp/src/
+├── server.py            # Starlette app + FastMCP setup
+├── tools/
+│   └── wikipedia.py     # Wikipedia search tool (demo)
+├── prompts/
+│   └── greeting.py      # Greeting prompt template (demo)
+└── resources/
+    └── __init__.py      # Placeholder (empty)
+```
+
+**Architecture:**
+
+```mermaid
+graph TD
+    A[Orchestrator MCP Strategy] -->|HTTP| B["/mcp endpoint"]
+    B --> C[FastMCP Server]
+    C --> D{Tool Call}
+    D -->|add| E["add(a, b) → int"]
+    D -->|wikipedia_search| F["wikipedia.search → list"]
+    C --> G{Prompt}
+    G -->|greet_user_prompt| H[Greeting template]
+    B --> I["/healthz → ok"]
+```
+
+**Key Implementation Details:**
+
+- **Starter/Demo app:** Ships with placeholder tools (`add`, `wikipedia_search`) — meant to be extended with custom tools
+- **FastMCP:** High-level MCP SDK handles protocol, session management automatically
+- **Transport:** Streamable HTTP via `mcp.streamable_http_app()` mounted at `/` and `/mcp`
+- **Session tracking:** `mcp-session-id` header exposed via CORS
+- **Health check:** `GET /healthz` → `{"status": "ok"}`
+- **Package management:** Uses `uv` instead of pip (faster, with lockfile)
+- **Orchestrator config:** Set `AGENT_STRATEGY=mcp` and `MCP_SERVER_URL=<container_app_url>/mcp`
+- **Testing:** Use MCP Inspector: `npx @modelcontextprotocol/inspector`
+
+**For the implementation team:** This is the component you'll customize most if extending beyond basic RAG. Add custom tools by creating new files in `src/tools/` and decorating functions with `@mcp.tool()`. The orchestrator's MCP strategy automatically discovers registered tools.
+
+---
+
+## 12. Cross-App Technical Summary
+
+### All Apps at a Glance
+
+| | Orchestrator | Ingestion | Frontend | MCP |
+|--|-------------|-----------|----------|-----|
+| **Python** | 3.12 | 3.12 | 3.12 | 3.12 |
+| **Framework** | FastAPI | FastAPI | FastAPI + Chainlit | Starlette + FastMCP |
+| **Docker base** | python:3.12-slim | devcontainers/python:3.12 | devcontainers/python:3.12 | python:3.12-slim |
+| **Port** | 8080 | 8080 | 8080 | 8080 |
+| **API style** | SSE streaming | REST + cron jobs | Chainlit WebSocket | MCP over HTTP |
+| **AI framework** | Semantic Kernel | — | — | FastMCP |
+| **Auth** | API key + JWT | API key | OAuth (MSAL) | Via orchestrator |
+| **Key library** | azure-ai-agents | msgraph-sdk | chainlit | mcp[cli] |
+| **Pkg manager** | pip | pip | pip | uv |
+
+### Dependency Versions (pinned across repos)
+
+| Package | Orchestrator | Ingestion | Frontend |
+|---------|-------------|-----------|----------|
+| fastapi | 0.115.12 | 0.115.12 | >=0.116.1 |
+| azure-identity | 1.21.0 | 1.19.0 | 1.23.0 |
+| azure-appconfiguration | 1.7.1 | 1.7.1 | 1.7.1 |
+| azure-cosmos | 4.5.1 | 4.5.1 | — |
+| azure-storage-blob | 12.25.1 | 12.24.1 | 12.25.1 |
+| tiktoken | 0.8.0 | 0.7.0 | — |
+| aiohttp | 3.13.3 | 3.13.3 | 3.13.3 |
+
+### What the Implementation Team Should Focus On
+
+1. **Orchestrator:** Customize system prompts (Cosmos DB or `/prompts/` files), tune search parameters (`TOP_K`, `SEARCH_APPROACH`), adjust chat model settings (`TEMPERATURE`, `TOP_P`)
+2. **Ingestion:** Configure SharePoint sites in Cosmos DB `datasources` container, adjust chunking parameters, set cron schedules, verify Document Intelligence API version for DOCX/PPTX support
+3. **Frontend:** Brand the UI via `theme.json` and `custom.css`, configure OAuth settings, enable/disable feedback
+4. **MCP:** Add custom tools for your domain (currently ships with demo tools only)
