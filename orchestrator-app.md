@@ -619,8 +619,8 @@ The Orchestrator reads configuration from Azure App Configuration with the follo
 
 **MCP Strategy (only when AGENT_STRATEGY=mcp):**
 
-| Key | Type | Purpose |
-|-----|------|---------|
+| Key              | Type   | Purpose                                                   |
+| ---------------- | ------ | --------------------------------------------------------- |
 | `MCP_SERVER_URL` | string | URL of the MCP Server Container App (`https://{url}/mcp`) |
 
 **NL2SQL Strategy (only when AGENT_STRATEGY=nl2sql):**
