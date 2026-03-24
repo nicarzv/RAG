@@ -481,37 +481,160 @@ The shipped CSS makes three modifications:
 
 ---
 
-## 11. Telemetry and Observability
+## 11. Telemetry, Logging, and Observability
 
-### 11.1 Application Insights Integration
+### 11.1 How Logging Works — The Full Picture
 
-The Frontend uses Azure Monitor OpenTelemetry for tracing:
+The Frontend logging has two outputs that go to different places:
 
-| Component | Library |
-|-----------|---------|
-| Azure Monitor SDK | `azure-monitor-opentelemetry==1.6.10` |
-| FastAPI instrumentation | `opentelemetry-instrumentation-fastapi` (via azure-monitor) |
-| HTTPX instrumentation | `opentelemetry-instrumentation-httpx==0.52b1` |
+```
+Frontend (gpt-rag-ui)
+    │
+    ├── Console logs (stdout)
+    │   └── Captured by Container Apps → Log Analytics workspace
+    │       └── Query via: Azure portal → Container App → "Log stream" (real-time)
+    │                      Azure portal → Container App → "Logs" (KQL against ContainerAppConsoleLogs_CL)
+    │
+    └── OpenTelemetry (traces, requests, dependencies, exceptions)
+        └── Sent to Application Insights via APPLICATIONINSIGHTS_CONNECTION_STRING
+            └── Query via: Azure portal → Application Insights → "Transaction search"
+                           Azure portal → Application Insights → "Logs" (KQL)
+                           Azure portal → Application Insights → "Application map" (service dependencies)
+                           Azure portal → Application Insights → "Failures" (error breakdown)
+                           Azure portal → Application Insights → "Performance" (request latency)
+```
 
-**What's traced:**
-- Every `handle_message` call (via `tracer.start_as_current_span`)
+**Two configuration keys control logging:**
+
+| Key | Default | What It Does |
+|-----|---------|-------------|
+| `LOG_LEVEL` | `Information` | Verbosity level: `Debug`, `Information`, `Warning`, `Error` |
+| `ENABLE_CONSOLE_LOGGING` | `true` | Whether to emit logs to stdout (Container Apps captures this) |
+
+**Connection to Application Insights:**
+
+| Key | Source | Required? |
+|-----|--------|-----------|
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | App Configuration (set by Bicep during provisioning) | Yes — without this, no telemetry reaches App Insights |
+
+The Bicep templates provision Application Insights automatically (`deployAppInsights=true` in `main.parameters.json`), create a Log Analytics workspace behind it, and inject the connection string into App Configuration. All three Container Apps (Frontend, Orchestrator, Ingestion) share the **same** Application Insights instance.
+
+### 11.2 Application Insights Integration (OpenTelemetry)
+
+The `telemetry.py` module configures Azure Monitor OpenTelemetry at startup:
+
+| Component | Library | What It Auto-Instruments |
+|-----------|---------|------------------------|
+| Azure Monitor SDK | `azure-monitor-opentelemetry==1.6.10` | Core telemetry pipeline |
+| FastAPI instrumentation | `opentelemetry-instrumentation-fastapi` (via azure-monitor) | Every HTTP request to the Frontend (routes, status codes, latency) |
+| HTTPX instrumentation | `opentelemetry-instrumentation-httpx==0.52b1` | Every outgoing HTTP call to the Orchestrator (dependencies) |
+
+**What's automatically traced:**
+- Every `handle_message` call (via `tracer.start_as_current_span("handle_message")`)
 - Span attributes: `question_id`, `conversation_id`, `user_id`
-- All outgoing HTTPX requests to the Orchestrator (auto-instrumented)
+- All outgoing HTTPX requests to the Orchestrator (auto-instrumented as dependencies)
 - Custom resource labels: `SERVICE_NAME=gpt-rag-ui`, node hostname
 
-### 11.2 Structured Logging
+**Distributed tracing:** Because both the Frontend and Orchestrator use OpenTelemetry, trace context is propagated automatically via HTTP headers. This means a single user query generates a trace that spans both services — you can follow a request from the Frontend through the Orchestrator and into AI Search/OpenAI calls in the Application Insights "Transaction search" or "End-to-end transaction details" view.
+
+### 11.3 Structured Log Events
 
 Key log events emitted at INFO level:
 
-| Event | What it logs |
-|-------|-------------|
-| `User request received` | conversation_id, question_id, user principal, message preview |
-| `Forwarding request to orchestrator` | conversation_id, user, authorized status, group count |
-| `Orchestrator request auth health` | mode (dapr/direct), has_access_token, token length |
-| `Streaming response references detected` | Resolved blob references |
-| `Response delivered` | conversation_id, chunk count, character count, preview |
-| `Auth decision` | running_in_azure, oauth_configured, allow_anonymous, source |
-| `User authenticated` | name, principal, authorized status |
+| Event | What It Logs | Why It Matters |
+|-------|-------------|---------------|
+| `User request received` | conversation_id, question_id, user principal, message preview | Audit: who asked what |
+| `Forwarding request to orchestrator` | conversation_id, user, authorized status, group count | Debug: auth + routing |
+| `Orchestrator request auth health` | mode (dapr/direct), has_access_token, token length | Debug: token issues |
+| `Streaming response references detected` | Resolved blob references | Debug: source citation resolution |
+| `Response delivered` | conversation_id, chunk count, character count, preview | Performance: response metrics |
+| `Auth decision` | running_in_azure, oauth_configured, allow_anonymous, source | Debug: why auth mode was chosen |
+| `User authenticated` | name, principal, authorized status | Audit: login events |
+
+### 11.4 Where to See Logs — Practical Guide
+
+**Real-time console logs (for debugging):**
+Azure portal → Container Apps → `frontend` → **Log stream** (sidebar)
+Shows stdout in real-time. Useful during deployments or to watch live traffic.
+
+**Historical console logs (KQL):**
+Azure portal → Container Apps → `frontend` → **Logs** (sidebar)
+```kql
+ContainerAppConsoleLogs_CL
+| where ContainerAppName_s == "frontend"
+| where TimeGenerated > ago(1h)
+| project TimeGenerated, Log_s
+| order by TimeGenerated desc
+```
+
+**Application Insights — Requests (user interactions):**
+Azure portal → Application Insights → **Transaction search** or **Performance**
+```kql
+requests
+| where cloud_RoleName == "gpt-rag-ui"
+| where timestamp > ago(24h)
+| summarize count(), avg(duration), percentile(duration, 95) by bin(timestamp, 1h)
+| render timechart
+```
+
+**Application Insights — Dependencies (calls to Orchestrator):**
+```kql
+dependencies
+| where cloud_RoleName == "gpt-rag-ui"
+| where target contains "orchestrator"
+| where timestamp > ago(24h)
+| summarize count(), avg(duration), countif(success == false) by bin(timestamp, 1h)
+| render timechart
+```
+
+**Application Insights — Errors and exceptions:**
+```kql
+exceptions
+| where cloud_RoleName == "gpt-rag-ui"
+| where timestamp > ago(24h)
+| summarize count() by outerMessage, bin(timestamp, 1h)
+| order by count_ desc
+```
+
+**Application Insights — Auth failures:**
+```kql
+traces
+| where cloud_RoleName == "gpt-rag-ui"
+| where message contains "auth" or message contains "session_expired"
+| where timestamp > ago(24h)
+| project timestamp, message, severityLevel
+| order by timestamp desc
+```
+
+**Application Map (service topology):**
+Azure portal → Application Insights → **Application map**
+Shows the Frontend → Orchestrator → AI Search / OpenAI / Cosmos DB dependency chain visually, with success rates and latency on each edge.
+
+### 11.5 How Frontend Logging Compares to Other Components
+
+All three GPT-RAG apps send telemetry to the **same** Application Insights instance, but each has different logging patterns:
+
+| Component | SERVICE_NAME | Console Logs | App Insights | Blob Logs | Feedback Events |
+|-----------|-------------|-------------|-------------|-----------|----------------|
+| **Frontend** | `gpt-rag-ui` | Yes | Yes (requests, dependencies, traces) | No | Yes (sends to Orchestrator) |
+| **Orchestrator** | `gpt-rag-orchestrator` | Yes | Yes (requests, dependencies, traces, custom events) | No | Yes (writes to Cosmos DB + App Insights) |
+| **Ingestion** | `gpt-rag-ingestion` | Yes | Yes (custom events: RUN-START, ITEM-COMPLETE, RUN-COMPLETE) | Yes (`jobs/` container in Blob Storage) | No |
+
+**Key difference:** The Ingestion app is the only component that writes logs to Blob Storage (in the `jobs` container). The Frontend and Orchestrator rely entirely on console logs + Application Insights.
+
+### 11.6 What You Can NOT See from the Frontend Alone
+
+The Frontend only logs its own request/response cycle. To get the full picture of what happened with a user query, you need to look across components:
+
+| Question | Where to Look |
+|----------|--------------|
+| What search results were returned? | Orchestrator logs in App Insights (`cloud_RoleName == "gpt-rag-orchestrator"`) |
+| Why did the model give a bad answer? | Orchestrator: search execution logs + LLM token counts |
+| Was content blocked by RAI filters? | Orchestrator: content safety violation events |
+| Did a user get permission-filtered results? | Orchestrator: OBO token exchange logs |
+| Why is ingestion not picking up new documents? | Ingestion: `RUN-COMPLETE` events in App Insights or `jobs/` blob container |
+
+**To correlate across all three:** Use the `operation_id` field in Application Insights KQL queries — it's the distributed trace ID that links Frontend request → Orchestrator processing → downstream service calls.
 
 ---
 
@@ -718,3 +841,233 @@ The Dockerfile is minimal:
 4. **Monitoring:** Verify Application Insights connection string is set — all traces flow through OpenTelemetry
 5. **Session stability:** Set `CHAINLIT_AUTH_SECRET` in Key Vault to prevent session loss on container restarts
 6. **Access control:** Use `ALLOWED_USER_NAMES` / `ALLOWED_USER_PRINCIPALS` to restrict access beyond Entra authentication
+
+---
+
+## 20. Quick Wins and Improvement Opportunities
+
+These are low-effort, high-impact improvements identified by reviewing the full source code of `gpt-rag-ui` v2.2.2. They are ordered by effort level and grouped by category.
+
+### 20.1 UX Improvements (Configuration Only — No Code Changes)
+
+#### 20.1.1 Add a Welcome Message
+
+**Current state:** The `@cl.on_chat_start` handler in `app.py` is literally `pass` — users see an empty chat with no guidance.
+
+**Quick win:** Add a configurable greeting that tells users what the chatbot can do, what data it has access to, and any limitations. This can be driven entirely from App Configuration:
+
+```python
+@cl.on_chat_start
+async def on_chat_start():
+    welcome = config.get("WELCOME_MESSAGE", "Hello! I'm your AI assistant. Ask me anything about our documents.", str)
+    await cl.Message(content=welcome).send()
+```
+
+**New App Config key:**
+
+| Key | Label | Suggested Value |
+|-----|-------|-----------------|
+| `WELCOME_MESSAGE` | `gpt-rag-ui` | Your custom welcome text |
+
+**Effort:** ~5 minutes. **Impact:** High — first-use experience is dramatically better.
+
+#### 20.1.2 Add Conversation Starters
+
+**Current state:** The empty chat screen shows nothing — users must think of a question from scratch.
+
+**Quick win:** Chainlit supports `@cl.set_starters` which renders clickable example question buttons on the empty chat screen. This helps users discover what the chatbot can answer:
+
+```python
+@cl.set_starters
+async def set_starters():
+    return [
+        cl.Starter(label="Summarize a topic", message="Can you summarize the key points about ...?"),
+        cl.Starter(label="Find a document", message="What documents do we have about ...?"),
+        cl.Starter(label="Compare policies", message="What are the differences between ...?"),
+        cl.Starter(label="Get a quick answer", message="What is our policy on ...?"),
+    ]
+```
+
+For maximum flexibility, read the starters from App Configuration as a JSON array so they can be updated without redeployment.
+
+**Effort:** ~10 minutes. **Impact:** High — dramatically reduces the "blank page" problem.
+
+#### 20.1.3 Enable File Upload
+
+**Current state:** `spontaneous_file_upload.enabled = false` in `.chainlit/config.toml`. The `accept` list, `max_files` (20), and `max_size_mb` (500) are already configured — only the enable flag is off.
+
+**When to enable:** If the orchestrator can handle file attachments, or if you plan to add ad-hoc document upload for indexing. This is a one-line change in config.toml:
+
+```toml
+[features.spontaneous_file_upload]
+    enabled = true
+```
+
+**Effort:** 1 line. **Impact:** Medium — depends on orchestrator support.
+
+#### 20.1.4 Enable HTML Rendering
+
+**Current state:** `unsafe_allow_html = false` in config.toml. All HTML in responses is escaped.
+
+**When to enable:** If the orchestrator returns structured content with tables, formatted HTML, or rich formatting. Since the orchestrator is your own trusted backend (not user-generated content), the security risk is low:
+
+```toml
+[features]
+unsafe_allow_html = true
+```
+
+**Effort:** 1 line. **Impact:** Medium — enables richer response formatting.
+
+#### 20.1.5 Enable LaTeX / Math Rendering
+
+**Current state:** `latex = false` in config.toml.
+
+**When to enable:** If any indexed documents contain mathematical formulas, financial equations, or quantitative data that the model might format with LaTeX notation:
+
+```toml
+[features]
+latex = true
+```
+
+**Note:** This can clash with `$` characters in regular text (e.g., currency). Test with your actual content before enabling in production.
+
+**Effort:** 1 line. **Impact:** Low to medium — depends on content.
+
+#### 20.1.6 Tune Session Timeout
+
+**Current state:** `user_session_timeout = 1296000` (15 days) in config.toml.
+
+**Recommendation:** For an enterprise app with OAuth, 15 days is long. Consider reducing to 1–3 days (86400–259200 seconds) to align with typical enterprise session policies. The token refresh logic will handle re-authentication gracefully.
+
+**Effort:** 1 line. **Impact:** Low (security posture improvement).
+
+### 20.2 UX Improvements (Code Changes Required)
+
+#### 20.2.1 Add Chat Profiles for Agent Strategy Selection
+
+**Current state:** All users get the same global agent strategy (`AGENT_STRATEGY` in App Config). There is no `@cl.set_chat_profiles` in the codebase, no dropdown, and no strategy field in the `OrchestratorRequest` schema.
+
+**What it would take:** Three changes across two repos:
+
+1. **Frontend (`app.py`)** — Add Chainlit chat profiles:
+
+```python
+@cl.set_chat_profiles
+async def chat_profile():
+    return [
+        cl.ChatProfile(name="General Assistant", markdown_description="Default RAG agent for document Q&A"),
+        cl.ChatProfile(name="SQL Analytics", markdown_description="Query structured data with natural language"),
+    ]
+```
+
+2. **Frontend (`orchestrator_client.py`)** — Include the selected profile in the request payload:
+
+```python
+payload["strategy"] = cl.user_session.get("chat_profile", "single_agent_rag")
+```
+
+3. **Orchestrator (`orchestrator.py`)** — Accept an optional `strategy` field in the request and override the global `AGENT_STRATEGY` when present.
+
+**Effort:** ~1 hour across both repos. **Impact:** High — enables multi-agent deployments.
+
+#### 20.2.2 Extend SAS URL Expiry
+
+**Current state:** SAS tokens for blob download links are hardcoded to 1 hour expiry (line 75 in `app.py`).
+
+**Problem:** In long conversations, users may click a source reference link after the 1-hour window has passed, getting an `AuthenticationFailed` error from Blob Storage.
+
+**Quick win:** Make the expiry configurable via App Config:
+
+```python
+sas_expiry_hours = int(config.get("REFERENCE_SAS_EXPIRY_HOURS", "4", str))
+expiry = datetime.now(timezone.utc) + timedelta(hours=sas_expiry_hours)
+```
+
+**New App Config key:**
+
+| Key | Label | Default | Recommended |
+|-----|-------|---------|-------------|
+| `REFERENCE_SAS_EXPIRY_HOURS` | `gpt-rag-ui` | `1` (current) | `4` to `8` |
+
+**Effort:** ~15 minutes. **Impact:** Medium — eliminates broken reference links in longer sessions.
+
+### 20.3 Code Quality Improvements
+
+#### 20.3.1 Deduplicate JWT Helper Functions
+
+**Current state:** The following functions are copy-pasted identically across three files:
+
+| Function | `app.py` | `auth_oauth.py` | `orchestrator_client.py` |
+|----------|----------|-----------------|-------------------------|
+| `_decode_jwt_unverified()` | Line 266 | Line 22 | Line 100 |
+| `_access_token_debug_summary()` | Line 281 | Line 41 | — |
+| `_jwt_exp_unverified()` | Line 303 | Line 73 | — |
+| `_access_token_ttl_seconds()` | Line 311 | Line 82 | — |
+| `_is_access_token_expiring()` | Line 319 | Line 90 | — |
+
+**Quick win:** Extract these into a shared `jwt_utils.py` module and import from all three files. This reduces maintenance burden and prevents the copies from drifting apart.
+
+**Effort:** ~20 minutes. **Impact:** Low (maintainability).
+
+#### 20.3.2 Fix Mixed-Language Error Messages
+
+**Current state:** Most error messages are in English, but two are in Spanish:
+
+- Line 432: `"Error de Servicio: {raw_chunk.strip()}"` — should be `"Service Error: ..."`
+- Line 433: Check for `"[ERROR en MAF Streaming]:"` — likely a legacy orchestrator error pattern
+
+**Quick win:** Standardize to English. Also verify whether the `[ERROR en MAF Streaming]` pattern is still emitted by the current orchestrator version (v2.4.2) — if not, the check can be removed entirely.
+
+**Effort:** ~5 minutes. **Impact:** Low (consistency).
+
+#### 20.3.3 Remove the Leading Space Token Hack
+
+**Current state:** Line 393 in `app.py` sends `await response_msg.stream_token(" ")` — a blank space — before any real content arrives. This is a workaround to force Chainlit to render the message bubble immediately.
+
+**Check needed:** Test whether Chainlit 2.9.4 still requires this hack. If not, removing it eliminates the leading space that appears in every response.
+
+**Effort:** ~10 minutes (including testing). **Impact:** Low (visual polish).
+
+#### 20.3.4 Simplify TERMINATE Buffer Logic
+
+**Current state:** The TERMINATE token detection in the streaming loop (around lines 480–510 in `app.py`) has a redundant second `if token_index != -1` check after the `break` that handles the same condition. The `else` branch is the only one that can execute at that point.
+
+**Quick win:** Simplify to just use `safe_flush_length = len(buffer)` after the loop exits normally, since the TERMINATE case is already handled inside the loop before the break.
+
+**Effort:** ~10 minutes. **Impact:** Low (readability).
+
+### 20.4 Infrastructure / Monitoring
+
+#### 20.4.1 Add Health Check to Chainlit App
+
+**Current state:** The "not ready" and "auth required" fallback apps both have `/healthz` endpoints, but the main Chainlit app does not.
+
+**Problem:** Container Apps health probes can't distinguish between "app is running" and "app is healthy" for the main application.
+
+**Quick win:** Add a lightweight health endpoint to the Chainlit app in `main.py`:
+
+```python
+@chainlit_app.get("/healthz")
+async def healthz():
+    return {"status": "ok", "mode": "chainlit"}
+```
+
+**Effort:** ~5 minutes. **Impact:** Medium — enables proper Container Apps health probes and monitoring.
+
+### 20.5 Summary — Priority Matrix
+
+| # | Improvement | Effort | Impact | Category |
+|---|------------|--------|--------|----------|
+| 1 | Welcome message | 5 min | High | UX — config |
+| 2 | Conversation starters | 10 min | High | UX — config |
+| 3 | Health check endpoint | 5 min | Medium | Infrastructure |
+| 4 | SAS URL expiry configurable | 15 min | Medium | UX — code |
+| 5 | Enable HTML rendering | 1 min | Medium | UX — config |
+| 6 | Enable file upload | 1 min | Medium | UX — config |
+| 7 | Chat profiles (agent selection) | 1 hour | High | UX — code (2 repos) |
+| 8 | Deduplicate JWT helpers | 20 min | Low | Code quality |
+| 9 | Fix Spanish error messages | 5 min | Low | Code quality |
+| 10 | Remove leading space hack | 10 min | Low | Code quality |
+| 11 | Simplify TERMINATE logic | 10 min | Low | Code quality |
+| 12 | Enable LaTeX rendering | 1 min | Low–Med | UX — config |
+| 13 | Tune session timeout | 1 min | Low | Security |
