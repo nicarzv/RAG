@@ -846,7 +846,7 @@ The Dockerfile is minimal:
 
 ## 20. Quick Wins and Improvement Opportunities
 
-These are low-effort, high-impact improvements identified by reviewing the full source code of `gpt-rag-ui` v2.2.2. They are ordered by effort level and grouped by category.
+These are high-impact improvements identified by reviewing the full source code of `gpt-rag-ui` v2.2.2. They are grouped by category.
 
 ### 20.1 UX Improvements (Configuration Only — No Code Changes)
 
@@ -869,7 +869,7 @@ async def on_chat_start():
 |-----|-------|-----------------|
 | `WELCOME_MESSAGE` | `gpt-rag-ui` | Your custom welcome text |
 
-**Effort:** ~5 minutes. **Impact:** High — first-use experience is dramatically better.
+**Impact:** High — first-use experience is dramatically better.
 
 #### 20.1.2 Add Conversation Starters
 
@@ -890,7 +890,7 @@ async def set_starters():
 
 For maximum flexibility, read the starters from App Configuration as a JSON array so they can be updated without redeployment.
 
-**Effort:** ~10 minutes. **Impact:** High — dramatically reduces the "blank page" problem.
+**Impact:** High — dramatically reduces the "blank page" problem.
 
 #### 20.1.3 Enable File Upload
 
@@ -903,7 +903,7 @@ For maximum flexibility, read the starters from App Configuration as a JSON arra
     enabled = true
 ```
 
-**Effort:** 1 line. **Impact:** Medium — depends on orchestrator support.
+**Impact:** Medium — depends on orchestrator support.
 
 #### 20.1.4 Enable HTML Rendering
 
@@ -916,7 +916,7 @@ For maximum flexibility, read the starters from App Configuration as a JSON arra
 unsafe_allow_html = true
 ```
 
-**Effort:** 1 line. **Impact:** Medium — enables richer response formatting.
+**Impact:** Medium — enables richer response formatting.
 
 #### 20.1.5 Enable LaTeX / Math Rendering
 
@@ -931,7 +931,7 @@ latex = true
 
 **Note:** This can clash with `$` characters in regular text (e.g., currency). Test with your actual content before enabling in production.
 
-**Effort:** 1 line. **Impact:** Low to medium — depends on content.
+**Impact:** Low to medium — depends on content.
 
 #### 20.1.6 Tune Session Timeout
 
@@ -939,7 +939,7 @@ latex = true
 
 **Recommendation:** For an enterprise app with OAuth, 15 days is long. Consider reducing to 1–3 days (86400–259200 seconds) to align with typical enterprise session policies. The token refresh logic will handle re-authentication gracefully.
 
-**Effort:** 1 line. **Impact:** Low (security posture improvement).
+**Impact:** Low (security posture improvement).
 
 ### 20.2 UX Improvements (Code Changes Required)
 
@@ -968,7 +968,7 @@ payload["strategy"] = cl.user_session.get("chat_profile", "single_agent_rag")
 
 3. **Orchestrator (`orchestrator.py`)** — Accept an optional `strategy` field in the request and override the global `AGENT_STRATEGY` when present.
 
-**Effort:** ~1 hour across both repos. **Impact:** High — enables multi-agent deployments.
+**Impact:** High — enables multi-agent deployments.
 
 #### 20.2.2 Extend SAS URL Expiry
 
@@ -989,7 +989,7 @@ expiry = datetime.now(timezone.utc) + timedelta(hours=sas_expiry_hours)
 |-----|-------|---------|-------------|
 | `REFERENCE_SAS_EXPIRY_HOURS` | `gpt-rag-ui` | `1` (current) | `4` to `8` |
 
-**Effort:** ~15 minutes. **Impact:** Medium — eliminates broken reference links in longer sessions.
+**Impact:** Medium — eliminates broken reference links in longer sessions.
 
 ### 20.3 Code Quality Improvements
 
@@ -1007,7 +1007,7 @@ expiry = datetime.now(timezone.utc) + timedelta(hours=sas_expiry_hours)
 
 **Quick win:** Extract these into a shared `jwt_utils.py` module and import from all three files. This reduces maintenance burden and prevents the copies from drifting apart.
 
-**Effort:** ~20 minutes. **Impact:** Low (maintainability).
+**Impact:** Low (maintainability).
 
 #### 20.3.2 Fix Mixed-Language Error Messages
 
@@ -1018,7 +1018,7 @@ expiry = datetime.now(timezone.utc) + timedelta(hours=sas_expiry_hours)
 
 **Quick win:** Standardize to English. Also verify whether the `[ERROR en MAF Streaming]` pattern is still emitted by the current orchestrator version (v2.4.2) — if not, the check can be removed entirely.
 
-**Effort:** ~5 minutes. **Impact:** Low (consistency).
+**Impact:** Low (consistency).
 
 #### 20.3.3 Remove the Leading Space Token Hack
 
@@ -1026,7 +1026,7 @@ expiry = datetime.now(timezone.utc) + timedelta(hours=sas_expiry_hours)
 
 **Check needed:** Test whether Chainlit 2.9.4 still requires this hack. If not, removing it eliminates the leading space that appears in every response.
 
-**Effort:** ~10 minutes (including testing). **Impact:** Low (visual polish).
+**Impact:** Low (visual polish).
 
 #### 20.3.4 Simplify TERMINATE Buffer Logic
 
@@ -1034,7 +1034,7 @@ expiry = datetime.now(timezone.utc) + timedelta(hours=sas_expiry_hours)
 
 **Quick win:** Simplify to just use `safe_flush_length = len(buffer)` after the loop exits normally, since the TERMINATE case is already handled inside the loop before the break.
 
-**Effort:** ~10 minutes. **Impact:** Low (readability).
+**Impact:** Low (readability).
 
 ### 20.4 Infrastructure / Monitoring
 
@@ -1052,25 +1052,25 @@ async def healthz():
     return {"status": "ok", "mode": "chainlit"}
 ```
 
-**Effort:** ~5 minutes. **Impact:** Medium — enables proper Container Apps health probes and monitoring.
+**Impact:** Medium — enables proper Container Apps health probes and monitoring.
 
 ### 20.5 Summary — Priority Matrix
 
-| # | Improvement | Effort | Impact | Category |
-|---|------------|--------|--------|----------|
-| 1 | Welcome message | 5 min | High | UX — config |
-| 2 | Conversation starters | 10 min | High | UX — config |
-| 3 | Health check endpoint | 5 min | Medium | Infrastructure |
-| 4 | SAS URL expiry configurable | 15 min | Medium | UX — code |
-| 5 | Enable HTML rendering | 1 min | Medium | UX — config |
-| 6 | Enable file upload | 1 min | Medium | UX — config |
-| 7 | Chat profiles (agent selection) | 1 hour | High | UX — code (2 repos) |
-| 8 | Deduplicate JWT helpers | 20 min | Low | Code quality |
-| 9 | Fix Spanish error messages | 5 min | Low | Code quality |
-| 10 | Remove leading space hack | 10 min | Low | Code quality |
-| 11 | Simplify TERMINATE logic | 10 min | Low | Code quality |
-| 12 | Enable LaTeX rendering | 1 min | Low–Med | UX — config |
-| 13 | Tune session timeout | 1 min | Low | Security |
+| # | Improvement | Impact | Category |
+|---|------------|--------|----------|
+| 1 | Welcome message | High | UX — config |
+| 2 | Conversation starters | High | UX — config |
+| 3 | Health check endpoint | Medium | Infrastructure |
+| 4 | SAS URL expiry configurable | Medium | UX — code |
+| 5 | Enable HTML rendering | Medium | UX — config |
+| 6 | Enable file upload | Medium | UX — config |
+| 7 | Chat profiles (agent selection) | High | UX — code (2 repos) |
+| 8 | Deduplicate JWT helpers | Low | Code quality |
+| 9 | Fix Spanish error messages | Low | Code quality |
+| 10 | Remove leading space hack | Low | Code quality |
+| 11 | Simplify TERMINATE logic | Low | Code quality |
+| 12 | Enable LaTeX rendering | Low–Med | UX — config |
+| 13 | Tune session timeout | Low | Security |
 
 ---
 
@@ -1474,18 +1474,17 @@ if model_override:
 
 ### 21.10 Full Change Summary
 
-| # | Component | File | Change | Effort |
-|---|-----------|------|--------|--------|
-| 1 | **Infrastructure** | `main.parameters.json` | Add new model to `modelDeploymentList` | 5 min |
-| 2 | **Infrastructure** | Azure AI Foundry | Deploy the model (via `azd provision` or portal) | 10 min |
-| 3 | **App Config** | Azure portal | Verify `MODEL_DEPLOYMENTS` updated; add `CHAT_PROFILES` JSON | 10 min |
-| 4 | **Frontend** | `app.py` | Add `@cl.set_chat_profiles` + update `on_chat_start` | 30 min |
-| 5 | **Frontend** | `orchestrator_client.py` | Add `model_canonical_name` param to `call_orchestrator_stream()` | 15 min |
-| 6 | **Orchestrator** | `schemas.py` | Add `model: Optional[str]` field to `OrchestratorRequest` | 5 min |
-| 7 | **Orchestrator** | `orchestrator.py` | Add `model_override` param to `Orchestrator.create()` | 15 min |
-| 8 | **Orchestrator** | `main.py` | Pass `body.model` to `Orchestrator.create()` | 5 min |
-| 9 | **Orchestrator** | Strategy files | Handle agent cache bypass for non-default models (v2 only) | 30 min |
-| | | | **Total estimated effort** | **~2 hours** |
+| # | Component | File | Change |
+|---|-----------|------|--------|
+| 1 | **Infrastructure** | `main.parameters.json` | Add new model to `modelDeploymentList` |
+| 2 | **Infrastructure** | Azure AI Foundry | Deploy the model (via `azd provision` or portal) |
+| 3 | **App Config** | Azure portal | Verify `MODEL_DEPLOYMENTS` updated; add `CHAT_PROFILES` JSON |
+| 4 | **Frontend** | `app.py` | Add `@cl.set_chat_profiles` + update `on_chat_start` |
+| 5 | **Frontend** | `orchestrator_client.py` | Add `model_canonical_name` param to `call_orchestrator_stream()` |
+| 6 | **Orchestrator** | `schemas.py` | Add `model: Optional[str]` field to `OrchestratorRequest` |
+| 7 | **Orchestrator** | `orchestrator.py` | Add `model_override` param to `Orchestrator.create()` |
+| 8 | **Orchestrator** | `main.py` | Pass `body.model` to `Orchestrator.create()` |
+| 9 | **Orchestrator** | Strategy files | Handle agent cache bypass for non-default models (v2 only) |
 
 ### 21.11 Testing Checklist
 
