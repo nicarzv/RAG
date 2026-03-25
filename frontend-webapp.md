@@ -1071,3 +1071,432 @@ async def healthz():
 | 11 | Simplify TERMINATE logic | 10 min | Low | Code quality |
 | 12 | Enable LaTeX rendering | 1 min | Low–Med | UX — config |
 | 13 | Tune session timeout | 1 min | Low | Security |
+
+---
+
+## 21. Deep Dive: Enabling User Model Selection
+
+This section documents the full analysis of what is needed to let users choose between different AI models (e.g., GPT-4o vs GPT-4o-mini vs GPT-5-mini) from the chat UI. It traces the model selection chain from the Chainlit frontend through the orchestrator to the Azure AI Foundry deployment, identifies every component that needs changes, and provides implementation guidance.
+
+### 21.1 Current State — How Model Selection Works Today
+
+**Today, the model is a global setting.** There is no per-user, per-conversation, or per-request model selection. The entire chain uses a single model configured in App Configuration:
+
+```mermaid
+graph LR
+    A["App Config<br/>CHAT_DEPLOYMENT_NAME = 'chat'"] --> B["BaseAgentStrategy.__init__()<br/>self.model_name = cfg.get('CHAT_DEPLOYMENT_NAME')"]
+    B --> C["create_agent(model=self.model_name)"]
+    C --> D["Azure AI Foundry<br/>uses the 'chat' deployment"]
+```
+
+**Key code locations:**
+
+| Component | File | Line | What it does |
+|-----------|------|------|--------------|
+| **Base strategy** | `orchestrator/src/strategies/base_agent_strategy.py` | 34 | `self.model_name = self.cfg.get("CHAT_DEPLOYMENT_NAME")` |
+| **Single agent v2** | `orchestrator/src/strategies/single_agent_rag_strategy_v2.py` | 124, 459 | `create_agent(model=model_name)` using the global config |
+| **NL2SQL strategy** | `orchestrator/src/strategies/nl2sql_strategy.py` | 60 | `model_deployment_name=self.model_name` |
+| **MCP strategy** | `orchestrator/src/strategies/mcp_strategy.py` | 109 | `instance.model = instance._get_model()` — uses `MODEL_DEPLOYMENTS` JSON |
+
+### 21.2 The MODEL_DEPLOYMENTS Infrastructure (Already Exists)
+
+The accelerator already has infrastructure for **multiple model deployments**. The Bicep deployment creates a `MODEL_DEPLOYMENTS` key in App Configuration that is a JSON array of all deployed models:
+
+**Defined in:** `gpt-rag/main.parameters.json` → `modelDeploymentList`
+
+**Current default deployment (2 models):**
+
+```json
+[
+    {
+        "canonical_name": "CHAT_DEPLOYMENT_NAME",
+        "name": "chat",
+        "model": "gpt-5-mini",
+        "modelFormat": "OpenAI",
+        "version": "2025-08-07",
+        "capacity": 40,
+        "apiVersion": "2025-01-01-preview",
+        "endpoint": "https://<account>.openai.azure.com/"
+    },
+    {
+        "canonical_name": "EMBEDDING_DEPLOYMENT_NAME",
+        "name": "text-embedding",
+        "model": "text-embedding-3-large",
+        "modelFormat": "OpenAI",
+        "version": "1",
+        "capacity": 40,
+        "apiVersion": "2025-01-01-preview",
+        "endpoint": "https://<account>.openai.azure.com/"
+    }
+]
+```
+
+**The `_get_model()` method already exists** in `BaseAgentStrategy` to look up a model by its `canonical_name`:
+
+```python
+def _get_model(self, model_name: str = 'CHAT_DEPLOYMENT_NAME') -> Dict:
+    model_deployments = self.cfg.get("MODEL_DEPLOYMENTS", default='[]')
+    json_model_deployments = json.loads(model_deployments)
+    for deployment in json_model_deployments:
+        if deployment.get("canonical_name") == model_name:
+            return deployment
+    return None
+```
+
+This means the orchestrator can already resolve different models by canonical name — but only the MCP strategy actually uses `_get_model()`. The single agent strategy and NL2SQL strategy hardcode `CHAT_DEPLOYMENT_NAME`.
+
+### 21.3 What Needs to Change — End to End
+
+There are **5 layers** of changes needed, spanning 3 repos:
+
+```mermaid
+graph TD
+    subgraph "Layer 1: Azure Infrastructure"
+        L1["Deploy additional model(s)<br/>in AI Foundry"]
+    end
+
+    subgraph "Layer 2: App Configuration"
+        L2["Add new models to<br/>MODEL_DEPLOYMENTS JSON<br/>+ update modelDeploymentList"]
+    end
+
+    subgraph "Layer 3: Frontend (gpt-rag-ui)"
+        L3A["Add @cl.set_chat_profiles<br/>(model dropdown in UI)"]
+        L3B["Pass selected model in<br/>orchestrator request payload"]
+    end
+
+    subgraph "Layer 4: Orchestrator Schema"
+        L4["Add 'model' field to<br/>OrchestratorRequest"]
+    end
+
+    subgraph "Layer 5: Orchestrator Strategy"
+        L5["Override self.model_name<br/>with per-request model<br/>when provided"]
+    end
+
+    L1 --> L2 --> L3A --> L3B --> L4 --> L5
+```
+
+### 21.4 Layer 1 — Deploy Additional Models in Azure AI Foundry
+
+You need at least two chat model deployments in your AI Foundry account. Add entries to `modelDeploymentList` in `main.parameters.json`:
+
+```json
+{
+    "modelDeploymentList": {
+        "value": [
+            {
+                "name": "chat",
+                "model": { "format": "OpenAI", "name": "gpt-5-mini", "version": "2025-08-07" },
+                "sku": { "name": "GlobalStandard", "capacity": 40 },
+                "canonical_name": "CHAT_DEPLOYMENT_NAME",
+                "apiVersion": "2025-01-01-preview"
+            },
+            {
+                "name": "chat-gpt4o",
+                "model": { "format": "OpenAI", "name": "gpt-4o", "version": "2024-11-20" },
+                "sku": { "name": "GlobalStandard", "capacity": 30 },
+                "canonical_name": "CHAT_GPT4O_DEPLOYMENT",
+                "apiVersion": "2025-01-01-preview"
+            },
+            {
+                "name": "text-embedding",
+                "model": { "format": "OpenAI", "name": "text-embedding-3-large", "version": "1" },
+                "sku": { "name": "Standard", "capacity": 40 },
+                "canonical_name": "EMBEDDING_DEPLOYMENT_NAME",
+                "apiVersion": "2025-01-01-preview"
+            }
+        ]
+    }
+}
+```
+
+Then run `azd provision` to deploy the new model. The Bicep template automatically writes the full list as `MODEL_DEPLOYMENTS` JSON in App Configuration.
+
+**Alternatively**, if you don't want to redeploy infrastructure, you can:
+1. Deploy the model manually in Azure AI Foundry portal
+2. Update the `MODEL_DEPLOYMENTS` JSON value directly in App Configuration (add the new entry to the existing JSON array)
+
+### 21.5 Layer 2 — App Configuration
+
+After Layer 1, verify that `MODEL_DEPLOYMENTS` in App Config contains all your models. Also add individual keys for easy reference:
+
+| Key | Label | Value | Purpose |
+|-----|-------|-------|---------|
+| `MODEL_DEPLOYMENTS` | `gpt-rag` | JSON array (auto-set by Bicep) | Full model registry |
+| `CHAT_DEPLOYMENT_NAME` | `gpt-rag` | `chat` | Default model deployment name |
+| `CHAT_GPT4O_DEPLOYMENT` | `gpt-rag` | `chat-gpt4o` | Additional model deployment name |
+
+The individual keys (`CHAT_DEPLOYMENT_NAME`, `CHAT_GPT4O_DEPLOYMENT`) are created by Bicep from the `canonical_name` values in `modelDeploymentList`. They map canonical names to actual deployment names.
+
+### 21.6 Layer 3 — Frontend Changes (gpt-rag-ui)
+
+Two files need changes:
+
+#### 21.6.1 Add Chat Profiles (`app.py`)
+
+Add a `@cl.set_chat_profiles` decorator to define the model options. The profiles appear as a dropdown at the top of the chat. Each new conversation starts with the selected profile.
+
+```python
+@cl.set_chat_profiles
+async def chat_profile(current_user: cl.User = None):
+    """Define available model profiles for the user to choose from."""
+    return [
+        cl.ChatProfile(
+            name="GPT-5 Mini",
+            markdown_description="Fast and cost-effective. Best for straightforward Q&A.",
+            icon="https://cdn-icons-png.flaticon.com/512/4712/4712109.png",
+        ),
+        cl.ChatProfile(
+            name="GPT-4o",
+            markdown_description="Most capable model. Best for complex reasoning and analysis.",
+            icon="https://cdn-icons-png.flaticon.com/512/4712/4712035.png",
+        ),
+    ]
+```
+
+**Making it configurable via App Config** (recommended — avoids redeployment when models change):
+
+```python
+import json
+
+@cl.set_chat_profiles
+async def chat_profile(current_user: cl.User = None):
+    """Load model profiles from App Configuration."""
+    profiles_json = config.get("CHAT_PROFILES", "[]", str)
+    try:
+        profiles = json.loads(profiles_json)
+    except json.JSONDecodeError:
+        profiles = []
+
+    if not profiles:
+        # Fallback: single default profile (no dropdown shown)
+        return [
+            cl.ChatProfile(
+                name="Default",
+                markdown_description="Default AI assistant",
+            )
+        ]
+
+    return [
+        cl.ChatProfile(
+            name=p["name"],
+            markdown_description=p.get("description", ""),
+            icon=p.get("icon"),
+        )
+        for p in profiles
+    ]
+```
+
+**New App Config key:**
+
+| Key | Label | Content Type | Value |
+|-----|-------|-------------|-------|
+| `CHAT_PROFILES` | `gpt-rag-ui` | `application/json` | See example below |
+
+```json
+[
+    {
+        "name": "GPT-5 Mini",
+        "description": "Fast and cost-effective. Best for straightforward Q&A.",
+        "model_canonical_name": "CHAT_DEPLOYMENT_NAME",
+        "icon": null
+    },
+    {
+        "name": "GPT-4o",
+        "description": "Most capable model. Best for complex reasoning and analysis.",
+        "model_canonical_name": "CHAT_GPT4O_DEPLOYMENT",
+        "icon": null
+    }
+]
+```
+
+#### 21.6.2 Update on_chat_start (`app.py`)
+
+Read the selected profile and store the model mapping in the session:
+
+```python
+@cl.on_chat_start
+async def on_chat_start():
+    chat_profile = cl.user_session.get("chat_profile")
+
+    # Resolve profile name to model canonical_name
+    profiles_json = config.get("CHAT_PROFILES", "[]", str)
+    try:
+        profiles = json.loads(profiles_json)
+    except json.JSONDecodeError:
+        profiles = []
+
+    model_canonical_name = None
+    for p in profiles:
+        if p["name"] == chat_profile:
+            model_canonical_name = p.get("model_canonical_name")
+            break
+
+    if model_canonical_name:
+        cl.user_session.set("model_canonical_name", model_canonical_name)
+```
+
+#### 21.6.3 Pass Model in Request Payload (`orchestrator_client.py`)
+
+Modify `call_orchestrator_stream()` to include the selected model:
+
+**Current code (line 276–283):**
+```python
+payload = {
+    "conversation_id": conversation_id,
+    "question": question,
+    "ask": question,
+}
+if question_id:
+    payload["question_id"] = question_id
+```
+
+**Modified code:**
+```python
+payload = {
+    "conversation_id": conversation_id,
+    "question": question,
+    "ask": question,
+}
+if question_id:
+    payload["question_id"] = question_id
+if model_canonical_name:
+    payload["model"] = model_canonical_name
+```
+
+The `model_canonical_name` needs to be passed as a parameter to `call_orchestrator_stream()`. In `app.py`'s `handle_message`, retrieve it from the session:
+
+```python
+model_canonical_name = cl.user_session.get("model_canonical_name")
+generator = call_orchestrator_stream(
+    conversation_id, message.content, auth_info, message.id,
+    model_canonical_name=model_canonical_name
+)
+```
+
+### 21.7 Layer 4 — Orchestrator Schema Changes (gpt-rag-orchestrator)
+
+Add a `model` field to `OrchestratorRequest` in `src/schemas.py`:
+
+```python
+class OrchestratorRequest(BaseModel):
+    # ... existing fields ...
+
+    model: Optional[str] = Field(
+        None,
+        description="Optional model canonical name override (e.g., 'CHAT_DEPLOYMENT_NAME', 'CHAT_GPT4O_DEPLOYMENT'). "
+                    "When provided, the orchestrator uses this model instead of the global CHAT_DEPLOYMENT_NAME.",
+        example="CHAT_GPT4O_DEPLOYMENT",
+    )
+```
+
+### 21.8 Layer 5 — Orchestrator Strategy Changes (gpt-rag-orchestrator)
+
+Two approaches are possible. Choose one:
+
+#### Option A — Override at Orchestrator Level (Recommended)
+
+Pass the model override from the request into the strategy. In `orchestrator.py`, modify `Orchestrator.create()`:
+
+```python
+@classmethod
+async def create(
+    cls,
+    conversation_id: str = None,
+    user_context: Dict = {},
+    request_access_token: Optional[str] = None,
+    model_override: Optional[str] = None,  # NEW
+):
+    instance = cls(conversation_id=conversation_id)
+    # ... existing code ...
+
+    instance.agentic_strategy = await AgentStrategyFactory.get_strategy(agentic_strategy_name)
+
+    # Apply model override if provided
+    if model_override:
+        model_info = instance.agentic_strategy._get_model(model_override)
+        if model_info:
+            instance.agentic_strategy.model_name = model_info.get("name")
+            logging.info(f"Model override applied: {model_override} -> {model_info.get('name')}")
+        else:
+            logging.warning(f"Model override '{model_override}' not found in MODEL_DEPLOYMENTS; using default")
+
+    return instance
+```
+
+And in `main.py`, pass the model from the request:
+
+```python
+orchestrator = await Orchestrator.create(
+    conversation_id=body.conversation_id,
+    user_context=user_context,
+    request_access_token=access_token if authorization else None,
+    model_override=getattr(body, "model", None),  # NEW
+)
+```
+
+#### Option B — Override at Strategy Level
+
+Each strategy reads `self.model_name` set in `BaseAgentStrategy.__init__()`. An alternative is to make each strategy accept an optional model override in its `initiate_agent_flow()` method. This is more invasive (changes every strategy) and less recommended.
+
+#### Important: Strategy-Specific Considerations
+
+The model override interacts differently with each strategy:
+
+| Strategy | How model_name is used | Override complexity |
+|----------|----------------------|-------------------|
+| **single_agent_rag (v2)** | `create_agent(model=model_name)` — creates an Azure AI Agent with this model. If using a cached/pre-warmed agent, the override won't work because the agent was already created with the global model. | **Medium** — need to skip the agent cache when a non-default model is requested |
+| **single_agent_rag (v1)** | Similar pattern, creates agent per-request | **Low** — straightforward override |
+| **MCP** | Uses `_get_model()` to get the full model info dict, then creates a Semantic Kernel `AzureChatCompletion` service | **Low** — just call `_get_model(model_override)` instead |
+| **NL2SQL** | Creates 3 agents (Triage, SQLQuery, Syntetizer), all using `self.model_name` | **Low** — override applies to all 3 agents |
+
+**The agent caching issue (single_agent_rag v2):** The v2 strategy pre-warms a single agent at startup and reuses it for all requests. If a user selects a different model, the pre-warmed agent uses the wrong model. You'd need to either:
+- Maintain a cache per model (e.g., `_cached_agents = {"chat": agent1, "chat-gpt4o": agent2}`)
+- Or fall back to per-request agent creation when a non-default model is selected (3-second latency penalty)
+
+### 21.9 Security Considerations
+
+**Model allow-listing:** Don't blindly trust the model name from the frontend. Validate it against `MODEL_DEPLOYMENTS` in the orchestrator:
+
+```python
+if model_override:
+    model_info = instance.agentic_strategy._get_model(model_override)
+    if not model_info:
+        logging.warning(f"Rejected unknown model: {model_override}")
+        model_override = None  # Fall back to default
+```
+
+**Cost control:** Different models have different costs. Consider:
+- Per-user model restrictions (some users only get the cheaper model)
+- Rate limiting per model
+- Logging which model was used for each conversation (for cost allocation)
+
+**Token limits:** Different models have different context windows. Ensure your system prompt and retrieval context don't exceed the model's limit.
+
+### 21.10 Full Change Summary
+
+| # | Component | File | Change | Effort |
+|---|-----------|------|--------|--------|
+| 1 | **Infrastructure** | `main.parameters.json` | Add new model to `modelDeploymentList` | 5 min |
+| 2 | **Infrastructure** | Azure AI Foundry | Deploy the model (via `azd provision` or portal) | 10 min |
+| 3 | **App Config** | Azure portal | Verify `MODEL_DEPLOYMENTS` updated; add `CHAT_PROFILES` JSON | 10 min |
+| 4 | **Frontend** | `app.py` | Add `@cl.set_chat_profiles` + update `on_chat_start` | 30 min |
+| 5 | **Frontend** | `orchestrator_client.py` | Add `model_canonical_name` param to `call_orchestrator_stream()` | 15 min |
+| 6 | **Orchestrator** | `schemas.py` | Add `model: Optional[str]` field to `OrchestratorRequest` | 5 min |
+| 7 | **Orchestrator** | `orchestrator.py` | Add `model_override` param to `Orchestrator.create()` | 15 min |
+| 8 | **Orchestrator** | `main.py` | Pass `body.model` to `Orchestrator.create()` | 5 min |
+| 9 | **Orchestrator** | Strategy files | Handle agent cache bypass for non-default models (v2 only) | 30 min |
+| | | | **Total estimated effort** | **~2 hours** |
+
+### 21.11 Testing Checklist
+
+After implementing, verify these scenarios:
+
+- [ ] Default model works when no profile is selected (backward compatible)
+- [ ] User can select a different model from the dropdown
+- [ ] Selected model persists across messages in the same conversation
+- [ ] New conversation resets to the selected profile's model
+- [ ] Invalid model names in the request are rejected gracefully
+- [ ] The agent cache (v2) correctly serves different models
+- [ ] Conversation history tracks which model was used
+- [ ] The `MODEL_DEPLOYMENTS` JSON is correctly parsed with multiple entries
+- [ ] OAuth token refresh doesn't reset the selected profile
