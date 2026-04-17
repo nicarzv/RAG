@@ -11,7 +11,7 @@
 ### Q5 — Frontend: streaming responses
 
 **Ask:**
-Our RAG chatbot has a React frontend that streams responses from the orchestrator API. Users complain that when the answer is long, nothing appears on screen for 5-6 seconds and then the entire response shows up at once. What's going wrong and how would you fix it?
+Our RAG chatbot has a Chainlit-based frontend with some custom React components like the feedback form. It streams responses from the orchestrator API. Users complain that when the answer is long, nothing appears on screen for 5-6 seconds and then the entire response shows up at once. What's going wrong and how would you fix it?
 
 **What a good answer covers:**
 The frontend isn't consuming the stream properly — it's waiting for the full HTTP response to complete instead of reading chunks as they arrive. The fix is to use the `ReadableStream` API (or `EventSource` for SSE) to process partial responses as they come in and render tokens incrementally. The orchestrator is likely already streaming (Server-Sent Events or chunked transfer encoding), but the frontend `fetch` call is doing `await response.json()` which buffers everything. Should switch to reading `response.body.getReader()` and appending each chunk to the UI as it arrives. A strong candidate mentions: handling markdown rendering on partial text (incomplete code blocks mid-stream), showing a typing indicator, and the UX decision of whether to render raw tokens or wait for complete sentences.
