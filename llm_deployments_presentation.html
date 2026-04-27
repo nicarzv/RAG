@@ -123,6 +123,9 @@ p{font-size:14px;margin:8px 0;line-height:1.6}
       <tr><td>Latency</td><td>80 TPS</td></tr>
       <tr><td>Spillover</td><td class="green">DZ Standard</td></tr>
     </table>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e8e6e1;font-size:12.5px;color:#4a4845;line-height:1.5">
+      Well-proven for RAG with excellent instruction following, structured outputs, and vision support. At 80 TPS, users get fast streaming responses. A solid fallback if gpt-5.1 proves too expensive at production scale, with a more favorable 1:4 output ratio.
+    </div>
   </div>
 
   <div class="card">
@@ -139,6 +142,9 @@ p{font-size:14px;margin:8px 0;line-height:1.6}
       <tr><td>Latency</td><td>90 TPS</td></tr>
       <tr><td>Spillover</td><td class="green">DZ Standard</td></tr>
     </table>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e8e6e1;font-size:12.5px;color:#4a4845;line-height:1.5">
+      Nearly 5x throughput per PTU vs gpt-4.1 (14,900 vs 3,000). For RAG, the quality gap is smaller than expected — grounded answers mostly require synthesis, not deep reasoning. The cost-efficient option: same PTU budget handles far more users, or same workload needs far fewer PTUs. Best scaling path for production.
+    </div>
   </div>
 
   <div class="card recommended">
@@ -155,6 +161,9 @@ p{font-size:14px;margin:8px 0;line-height:1.6}
       <tr><td>Latency</td><td>50 TPS</td></tr>
       <tr><td>Spillover</td><td class="green">DZ Standard</td></tr>
     </table>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e8e6e1;font-size:12.5px;color:#4a4845;line-height:1.5">
+      Latest GA model with the best balance: higher throughput than gpt-4.1 (4,750 vs 3,000 TPM/PTU), 400K context and 128K max output for complex multi-turn conversations, and configurable reasoning via <code>reasoning_effort</code>. Output ratio is 1:8 instead of 1:4, but the capability uplift and future-proofing make this the recommended primary model for both testing and production.
+    </div>
   </div>
 </div>
 
@@ -233,7 +242,24 @@ p{font-size:14px;margin:8px 0;line-height:1.6}
 </table>
 
 <div class="caveat">
-  <strong>Confirmed defaults from deployed accelerator:</strong> CHUNKING_NUM_TOKENS = 2,048 · TOKEN_OVERLAP = 200 · SEARCH_RAGINDEX_TOP_K = 3 (all using hardcoded defaults, not set in App Configuration). With 3 chunks at up to 2,048 tokens each, actual RAG chat input could be 5,500–7,200 tokens — higher than the 4,000 estimate. However, at 30 test users the PTU calculator returns the minimum floor regardless, so this does not change the result. <strong>We deliberately size conservatively</strong> — scaling up PTUs is easy, but scaling down after purchasing an Azure Reservation wastes committed spend. We will monitor real token usage via Azure Monitor during testing and re-run the calculator with actual values before production scaling.
+  <strong>Confirmed defaults from deployed accelerator:</strong>
+  <table style="width:100%;border-collapse:collapse;margin:12px 0 8px;font-size:13px">
+    <tr style="border-bottom:1px solid #e8e6e1">
+      <td style="padding:8px 10px;font-weight:600;white-space:nowrap;color:#6b6966;width:220px">CHUNKING_NUM_TOKENS = 2,048</td>
+      <td style="padding:8px 10px">When documents are ingested, they are split into smaller pieces called "chunks." Each chunk can be up to <strong>2,048 tokens</strong> long (~1.5 pages of text). This is how the system breaks large documents into searchable pieces.</td>
+    </tr>
+    <tr style="border-bottom:1px solid #e8e6e1">
+      <td style="padding:8px 10px;font-weight:600;white-space:nowrap;color:#6b6966">TOKEN_OVERLAP = 200</td>
+      <td style="padding:8px 10px">Consecutive chunks share <strong>200 tokens</strong> of overlapping text at their boundaries. This prevents important information from being lost when a sentence or idea spans two chunks.</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 10px;font-weight:600;white-space:nowrap;color:#6b6966">SEARCH_RAGINDEX_TOP_K = 3</td>
+      <td style="padding:8px 10px">When a user asks a question, the system retrieves the <strong>3 most relevant chunks</strong> from the search index and sends them to the LLM as context for generating the answer.</td>
+    </tr>
+  </table>
+  <p style="margin:10px 0 6px;font-size:13px">All three settings use hardcoded defaults — they are not configured in App Configuration.</p>
+  <p style="margin:6px 0;font-size:13px"><strong>What this means for sizing:</strong> In a RAG chat call, the LLM receives up to 3 chunks × 2,048 tokens = ~6,144 tokens of document context, plus the system prompt, chat history, and user question — totalling roughly <strong>5,500–7,200 input tokens</strong> per request. This is higher than the conservative 4,000-token estimate used in Scenario A. However, at 30 test users the PTU calculator returns the minimum floor regardless, so this does not change the provisioning result.</p>
+  <p style="margin:6px 0;font-size:13px"><strong>We deliberately size conservatively</strong> — scaling up PTUs is easy, but scaling down after purchasing an Azure Reservation wastes committed spend. We will monitor real token usage via Azure Monitor during testing and re-run the calculator with actual values before production scaling.</p>
 </div>
 
 <h2>PTU calculator results</h2>
