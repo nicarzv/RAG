@@ -105,6 +105,41 @@ p{font-size:14px;margin:8px 0;line-height:1.6}
   </div>
 </div>
 
+<h2>Key terms</h2>
+<p class="section-intro">Understanding the terminology used throughout this document.</p>
+
+<table class="data">
+  <thead>
+    <tr><th style="width:200px">Term</th><th>What it means</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="bold">PTU</td>
+      <td>Provisioned Throughput Unit — Azure OpenAI's unit of reserved processing capacity. Think of it like reserving seats on a bus: you pay for a fixed number of PTUs, and that guarantees your requests get processed at a consistent speed. The more PTUs, the more tokens per minute your deployment can handle. Each model has different efficiency — e.g. gpt-4.1-mini processes 14,900 input tokens/min per PTU vs only 3,000 for gpt-4.1. Minimum: 15 PTU, increments of 5.</td>
+    </tr>
+    <tr>
+      <td class="bold">Output token ratio<br><span style="font-weight:normal;color:#6b6966">(1:4 or 1:8)</span></td>
+      <td>Generating output is more expensive than processing input. This ratio defines how much more. With gpt-4.1's <strong>1:4</strong> ratio, 1 output token uses the same capacity as 4 input tokens. With gpt-5.1's <strong>1:8</strong> ratio, 1 output token = 8 input tokens of capacity. Example: if gpt-5.1 generates a 500-token answer, it consumes the equivalent of 4,000 input tokens (500 × 8). Output-heavy workloads like summarization cost more on higher-ratio models. These ratios are defined by Microsoft/OpenAI per model — we cannot change them.</td>
+    </tr>
+    <tr>
+      <td class="bold">Max output tokens</td>
+      <td>The maximum number of tokens the model can generate in a single response. gpt-4.1 and gpt-4.1-mini: 32,768 tokens (~25 pages). gpt-5.1: 128,000 tokens (~100 pages). Our RAG chatbot answers are typically 400–1,000 tokens, so well within limits. The higher cap matters for summarizing very long documents. Fixed per model by Microsoft/OpenAI.</td>
+    </tr>
+    <tr>
+      <td class="bold">Input TPM per PTU</td>
+      <td>How many input tokens per minute one PTU can process. Higher = more efficient = fewer PTUs needed for the same workload. Varies significantly: gpt-4.1-mini (14,900) is nearly 5× more efficient than gpt-4.1 (3,000).</td>
+    </tr>
+    <tr>
+      <td class="bold">Utilization %</td>
+      <td>How much of the provisioned capacity is actually being used. At 50% on 100 PTU, you're using the equivalent of 50 PTUs. When utilization hits 100%, excess requests spill over to Data Zone Standard. Lower utilization = more headroom for growth.</td>
+    </tr>
+    <tr>
+      <td class="bold">Spillover</td>
+      <td>When the provisioned deployment is fully utilized (100%), excess traffic is automatically routed to a pay-per-use Data Zone Standard deployment of the same model. Users never get rejected — they just get served via the standard tier for the overflow. The provisioned deployment handles steady-state load at predictable cost; spillover catches the bursts.</td>
+    </tr>
+  </tbody>
+</table>
+
 <h2>Recommended models</h2>
 <p class="section-intro">Models were evaluated against: Data Zone availability in Sweden, Chat Completions API support, throughput efficiency (TPM/PTU), latency, context window, RAG quality, and cost at minimum scale.</p>
 
