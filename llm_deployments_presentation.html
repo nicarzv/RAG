@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Deployment Strategy — Sweden Data Zone Provisioned Throughput</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8f7f4;color:#1a1a1a;line-height:1.6;padding:40px 20px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-size:28px;font-weight:600;margin-bottom:6px}
+h2{font-size:20px;font-weight:600;margin:48px 0 16px;padding-bottom:8px;border-bottom:2px solid #e8e6e1}
+h3{font-size:16px;font-weight:600;margin:28px 0 12px}
+.subtitle{font-size:14px;color:#6b6966;margin-bottom:32px}
+.meta{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:32px}
+.meta-item{background:#fff;border:1px solid #e8e6e1;border-radius:10px;padding:14px 20px;flex:1;min-width:200px}
+.meta-label{font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#8a8784;margin-bottom:4px}
+.meta-value{font-size:15px;font-weight:500}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:24px 0}
+.card{background:#fff;border:1px solid #e8e6e1;border-radius:12px;padding:20px 22px;position:relative}
+.card.recommended{border:2px solid #534AB7}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:3px 12px;border-radius:6px;margin-bottom:12px}
+.badge-rec{background:#EEEDFE;color:#3C3489}
+.badge-cost{background:#EAF3DE;color:#27500A}
+.badge-base{background:#E6F1FB;color:#0C447C}
+.card-title{font-size:18px;font-weight:600;margin-bottom:2px}
+.card-sub{font-size:13px;color:#6b6966;margin-bottom:16px}
+.ptu-big{font-size:36px;font-weight:600;line-height:1}
+.ptu-label{font-size:14px;color:#6b6966;margin-left:4px}
+.util-bar{background:#e8e6e1;border-radius:6px;height:8px;margin:10px 0 4px}
+.util-fill{height:8px;border-radius:6px}
+.util-text{font-size:12px;color:#6b6966;margin-bottom:16px}
+.spec-table{width:100%;border-top:1px solid #e8e6e1;padding-top:12px}
+.spec-table td{padding:4px 0;font-size:13px}
+.spec-table td:first-child{color:#6b6966}
+.spec-table td:last-child{text-align:right;font-weight:500}
+.green{color:#0F6E56}
+table.data{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #e8e6e1}
+table.data th{background:#f8f7f4;text-align:left;padding:10px 14px;font-size:13px;font-weight:600;color:#6b6966;border-bottom:1px solid #e8e6e1}
+table.data th.right{text-align:right}
+table.data td{padding:10px 14px;font-size:13px;border-bottom:1px solid #f0efeb}
+table.data td.right{text-align:right}
+table.data td.bold{font-weight:600}
+table.data tr:last-child td{border-bottom:none}
+table.data tr.total-row{background:#f8f7f4;border-top:2px solid #e8e6e1}
+table.data tr.total-row td{font-weight:600;padding:12px 14px}
+.col-41{color:#0C447C}
+.col-mini{color:#27500A}
+.col-51{color:#3C3489}
+.rejected{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:16px 0}
+.rej-card{background:#fff;border:1px solid #e8e6e1;border-radius:10px;padding:14px 18px}
+.rej-name{font-size:14px;font-weight:600;margin-bottom:4px}
+.rej-reason{font-size:13px;color:#6b6966}
+.caveat{background:#FFF8EB;border:1px solid #F0D9A0;border-radius:10px;padding:16px 20px;margin:16px 0;font-size:13px;color:#6b5a2e}
+.caveat strong{color:#4a3d1a}
+.step{display:flex;gap:14px;margin:12px 0;align-items:flex-start}
+.step-num{background:#EEEDFE;color:#3C3489;font-weight:600;font-size:13px;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.step-text{font-size:14px;line-height:1.5}
+.step-text strong{font-weight:600}
+p{font-size:14px;margin:8px 0;line-height:1.6}
+.section-intro{font-size:14px;color:#6b6966;margin-bottom:20px}
+.footer{text-align:center;font-size:12px;color:#8a8784;margin-top:48px;padding-top:20px;border-top:1px solid #e8e6e1}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>LLM Deployment Strategy</h1>
+<p class="subtitle">Sweden Data Zone Provisioned Throughput — Proposal for team review — April 2026</p>
+
+<div class="meta">
+  <div class="meta-item">
+    <div class="meta-label">Region</div>
+    <div class="meta-value">Sweden Central</div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Deployment type</div>
+    <div class="meta-value">Data Zone Provisioned Throughput</div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Spillover</div>
+    <div class="meta-value">Data Zone Standard</div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Test users</div>
+    <div class="meta-value">~30</div>
+  </div>
+</div>
+
+<h2>Context</h2>
+<p>We need to provision LLMs for our RAG chatbot built on the GPT-RAG Solution Accelerator. The orchestrator uses maf_lite, which calls the LLM directly via the Chat Completions API for streaming responses. All data must stay within the EU data zone — models must be available on both Data Zone Provisioned and Data Zone Standard in Sweden Central for safe spillover.</p>
+
+<div class="meta" style="margin-top:20px">
+  <div class="meta-item">
+    <div class="meta-label">Documents in index</div>
+    <div class="meta-value">4,000</div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Avg pages / document</div>
+    <div class="meta-value">100</div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Median pages / document</div>
+    <div class="meta-value">50</div>
+  </div>
+</div>
+
+<h2>Recommended models</h2>
+<p class="section-intro">Models were evaluated against: Data Zone availability in Sweden, Chat Completions API support, throughput efficiency (TPM/PTU), latency, context window, RAG quality, and cost at minimum scale.</p>
+
+<div class="cards">
+  <div class="card">
+    <span class="badge badge-base">Strong baseline</span>
+    <div class="card-title">gpt-4.1</div>
+    <div class="card-sub">Proven quality for RAG</div>
+    <div><span class="ptu-big" style="font-size:28px">25–50</span><span class="ptu-label">PTU start</span></div>
+    <div style="font-size:12px;color:#8a8784;margin:4px 0 8px">Calculator ceiling: 100 PTU · Spillover handles peaks</div>
+    <table class="spec-table">
+      <tr><td>Input TPM/PTU</td><td>3,000</td></tr>
+      <tr><td>Output ratio</td><td>1:4</td></tr>
+      <tr><td>Context</td><td>300K</td></tr>
+      <tr><td>Max output</td><td>32K</td></tr>
+      <tr><td>Latency</td><td>80 TPS</td></tr>
+      <tr><td>Spillover</td><td class="green">DZ Standard</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <span class="badge badge-cost">Cost efficient</span>
+    <div class="card-title">gpt-4.1-mini</div>
+    <div class="card-sub">5x throughput per PTU</div>
+    <div><span class="ptu-big" style="font-size:28px">15–25</span><span class="ptu-label">PTU start</span></div>
+    <div style="font-size:12px;color:#8a8784;margin:4px 0 8px">Calculator ceiling: 100 PTU · Spillover handles peaks</div>
+    <table class="spec-table">
+      <tr><td>Input TPM/PTU</td><td>14,900</td></tr>
+      <tr><td>Output ratio</td><td>1:4</td></tr>
+      <tr><td>Context</td><td>300K</td></tr>
+      <tr><td>Max output</td><td>32K</td></tr>
+      <tr><td>Latency</td><td>90 TPS</td></tr>
+      <tr><td>Spillover</td><td class="green">DZ Standard</td></tr>
+    </table>
+  </div>
+
+  <div class="card recommended">
+    <span class="badge badge-rec">Recommended</span>
+    <div class="card-title">gpt-5.1</div>
+    <div class="card-sub">Best balance — capability + throughput</div>
+    <div><span class="ptu-big" style="font-size:28px">25–50</span><span class="ptu-label">PTU start</span></div>
+    <div style="font-size:12px;color:#8a8784;margin:4px 0 8px">Calculator ceiling: 100 PTU · Spillover handles peaks</div>
+    <table class="spec-table">
+      <tr><td>Input TPM/PTU</td><td>4,750</td></tr>
+      <tr><td>Output ratio</td><td>1:8</td></tr>
+      <tr><td>Context</td><td>400K</td></tr>
+      <tr><td>Max output</td><td>128K</td></tr>
+      <tr><td>Latency</td><td>50 TPS</td></tr>
+      <tr><td>Spillover</td><td class="green">DZ Standard</td></tr>
+    </table>
+  </div>
+</div>
+
+<h2>Models considered and rejected</h2>
+
+<div class="rejected">
+  <div class="rej-card">
+    <div class="rej-name">gpt-5.4 &amp; gpt-5.2</div>
+    <div class="rej-reason">Not available on Data Zone Standard in Sweden — no safe spillover path within the EU data zone.</div>
+  </div>
+  <div class="rej-card">
+    <div class="rej-name">gpt-5</div>
+    <div class="rej-reason">Same generation as gpt-5.1 but older. Superseded in every dimension — no reason to choose it.</div>
+  </div>
+  <div class="rej-card">
+    <div class="rej-name">o3, o4-mini, o1, o3-mini</div>
+    <div class="rej-reason">Reasoning models — overkill for RAG. Much lower throughput per PTU (o1: 230 TPM/PTU vs 3,000 for gpt-4.1).</div>
+  </div>
+  <div class="rej-card">
+    <div class="rej-name">gpt-4o &amp; gpt-4o-mini</div>
+    <div class="rej-reason">Previous generation. Lower throughput (2,500 TPM/PTU), slower latency (25 TPS), smaller context (128K).</div>
+  </div>
+  <div class="rej-card">
+    <div class="rej-name">gpt-4.1-nano</div>
+    <div class="rej-reason">Very high throughput (59,400 TPM/PTU) but quality too low for a user-facing chatbot.</div>
+  </div>
+  <div class="rej-card">
+    <div class="rej-name">gpt-5.1-codex</div>
+    <div class="rej-reason">Code-optimized, not designed for RAG. Also no DZ Standard availability in Sweden.</div>
+  </div>
+</div>
+
+<h2>Workload estimation</h2>
+<p class="section-intro">Based on ~30 test users, 4,000 documents (avg 100 pages, median 50). Peak assumes roughly a third of users active within the same minute.</p>
+
+<table class="data">
+  <thead>
+    <tr>
+      <th>Use case</th>
+      <th class="right">Peak calls/min</th>
+      <th class="right">Input tokens</th>
+      <th class="right">Output tokens</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="bold">RAG chat</td>
+      <td class="right">10</td>
+      <td class="right">4,000</td>
+      <td class="right">500</td>
+      <td>User query → AI Search retrieval → grounded answer</td>
+    </tr>
+    <tr>
+      <td class="bold">Basic chat</td>
+      <td class="right">8</td>
+      <td class="right">1,500</td>
+      <td class="right">400</td>
+      <td>No retrieval — casual conversation, clarifications</td>
+    </tr>
+    <tr>
+      <td class="bold">Summarization</td>
+      <td class="right">3</td>
+      <td class="right">8,000</td>
+      <td class="right">1,000</td>
+      <td>User submits a long document section for summary</td>
+    </tr>
+    <tr>
+      <td class="bold">Q&amp;A with follow-ups</td>
+      <td class="right">6</td>
+      <td class="right">6,000</td>
+      <td class="right">600</td>
+      <td>Multi-turn RAG with accumulating history</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="caveat">
+  <strong>Confirmed defaults from deployed accelerator:</strong> CHUNKING_NUM_TOKENS = 2,048 · TOKEN_OVERLAP = 200 · SEARCH_RAGINDEX_TOP_K = 3 (all using hardcoded defaults, not set in App Configuration). With 3 chunks at up to 2,048 tokens each, actual RAG chat input could be 5,500–7,200 tokens — higher than the 4,000 estimate. However, at 30 test users the PTU calculator returns the minimum floor regardless, so this does not change the result. <strong>We deliberately size conservatively</strong> — scaling up PTUs is easy, but scaling down after purchasing an Azure Reservation wastes committed spend. We will monitor real token usage via Azure Monitor during testing and re-run the calculator with actual values before production scaling.
+</div>
+
+<h2>PTU calculator results</h2>
+<p class="section-intro">All three models evaluated using the Microsoft Foundry PTU calculator. Min deployment: 15 PTU, increment: 5 PTU. Two scenarios compared — conservative estimate vs realistic estimate based on actual deployed chunking configuration.</p>
+
+<h3>Scenario A — Conservative (4,000 input tokens for RAG chat)</h3>
+
+<table class="data">
+  <thead>
+    <tr>
+      <th>Use case</th>
+      <th class="right">Calls/min</th>
+      <th class="right">In / Out</th>
+      <th class="right" style="color:#0C447C">gpt-4.1</th>
+      <th class="right" style="color:#27500A">gpt-4.1-mini</th>
+      <th class="right" style="color:#3C3489">gpt-5.1</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="bold">RAG chat</td>
+      <td class="right">10</td>
+      <td class="right">4K / 500</td>
+      <td class="right bold">20</td>
+      <td class="right bold">15</td>
+      <td class="right bold">20</td>
+    </tr>
+    <tr>
+      <td class="bold">Basic chat</td>
+      <td class="right">8</td>
+      <td class="right">1.5K / 400</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+    </tr>
+    <tr>
+      <td class="bold">Summarization</td>
+      <td class="right">3</td>
+      <td class="right">8K / 1K</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+    </tr>
+    <tr>
+      <td class="bold">Q&amp;A with follow-ups</td>
+      <td class="right">6</td>
+      <td class="right">6K / 600</td>
+      <td class="right bold">20</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+    </tr>
+    <tr class="total-row">
+      <td colspan="3">Total PTU (utilization)</td>
+      <td class="right col-41">100 <span style="font-weight:400;font-size:12px;color:#6b6966">(57%)</span></td>
+      <td class="right col-mini">100 <span style="font-weight:400;font-size:12px;color:#6b6966">(11%)</span></td>
+      <td class="right col-51">100 <span style="font-weight:400;font-size:12px;color:#6b6966">(49%)</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 style="margin-top:28px">Scenario B — Realistic (6,000 input tokens for RAG chat)</h3>
+<p style="font-size:13px;color:#6b6966;margin-bottom:12px">Adjusted to reflect deployed config: SEARCH_RAGINDEX_TOP_K = 3 chunks at up to CHUNKING_NUM_TOKENS = 2,048 tokens each, plus system prompt and history.</p>
+
+<table class="data">
+  <thead>
+    <tr>
+      <th>Use case</th>
+      <th class="right">Calls/min</th>
+      <th class="right">In / Out</th>
+      <th class="right" style="color:#0C447C">gpt-4.1</th>
+      <th class="right" style="color:#27500A">gpt-4.1-mini</th>
+      <th class="right" style="color:#3C3489">gpt-5.1</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="bold">RAG chat</td>
+      <td class="right">10</td>
+      <td class="right">6K / 500</td>
+      <td class="right bold">30</td>
+      <td class="right bold">15</td>
+      <td class="right bold">25</td>
+    </tr>
+    <tr>
+      <td class="bold">Basic chat</td>
+      <td class="right">8</td>
+      <td class="right">1.5K / 400</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+    </tr>
+    <tr>
+      <td class="bold">Summarization</td>
+      <td class="right">3</td>
+      <td class="right">8K / 1K</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+    </tr>
+    <tr>
+      <td class="bold">Q&amp;A with follow-ups</td>
+      <td class="right">6</td>
+      <td class="right">6K / 600</td>
+      <td class="right bold">20</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+    </tr>
+    <tr class="total-row">
+      <td colspan="3">Total PTU (utilization)</td>
+      <td class="right col-41">100 <span style="font-weight:400;font-size:12px;color:#6b6966">(64%)</span></td>
+      <td class="right col-mini">100 <span style="font-weight:400;font-size:12px;color:#6b6966">(13%)</span></td>
+      <td class="right col-51">100 <span style="font-weight:400;font-size:12px;color:#6b6966">(53%)</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 style="margin-top:28px">Scenario C — Upper bound (7,200 input tokens for RAG chat)</h3>
+<p style="font-size:13px;color:#6b6966;margin-bottom:12px">Worst case: all 3 chunks filled to max 2,048 tokens (6,144) + system prompt (300) + chat history (700) + query (100).</p>
+
+<table class="data">
+  <thead>
+    <tr>
+      <th>Use case</th>
+      <th class="right">Calls/min</th>
+      <th class="right">In / Out</th>
+      <th class="right" style="color:#0C447C">gpt-4.1</th>
+      <th class="right" style="color:#27500A">gpt-4.1-mini</th>
+      <th class="right" style="color:#3C3489">gpt-5.1</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="bold">RAG chat</td>
+      <td class="right">10</td>
+      <td class="right">7.2K / 500</td>
+      <td class="right bold">35</td>
+      <td class="right bold">15</td>
+      <td class="right bold">25</td>
+    </tr>
+    <tr>
+      <td class="bold">Basic chat</td>
+      <td class="right">8</td>
+      <td class="right">1.5K / 400</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+    </tr>
+    <tr>
+      <td class="bold">Summarization</td>
+      <td class="right">3</td>
+      <td class="right">8K / 1K</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+    </tr>
+    <tr>
+      <td class="bold">Q&amp;A with follow-ups</td>
+      <td class="right">6</td>
+      <td class="right">6K / 600</td>
+      <td class="right bold">20</td>
+      <td class="right bold">15</td>
+      <td class="right bold">15</td>
+    </tr>
+    <tr class="total-row">
+      <td colspan="3">Total PTU (utilization)</td>
+      <td class="right col-41">100 <span style="font-weight:400;font-size:12px;color:#6b6966">(68%)</span></td>
+      <td class="right col-mini">100 <span style="font-weight:400;font-size:12px;color:#6b6966">(14%)</span></td>
+      <td class="right col-51">100 <span style="font-weight:400;font-size:12px;color:#6b6966">(55%)</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 style="margin-top:28px">Utilization comparison across scenarios</h3>
+
+<table class="data">
+  <thead>
+    <tr>
+      <th>Model</th>
+      <th class="right">A — Conservative (4K)</th>
+      <th class="right">B — Realistic (6K)</th>
+      <th class="right">C — Upper bound (7.2K)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="bold" style="color:#0C447C">gpt-4.1</td>
+      <td class="right">57.07%</td>
+      <td class="right">63.73%</td>
+      <td class="right">67.73%</td>
+    </tr>
+    <tr>
+      <td class="bold" style="color:#27500A">gpt-4.1-mini</td>
+      <td class="right">11.49%</td>
+      <td class="right">12.83%</td>
+      <td class="right">13.64%</td>
+    </tr>
+    <tr>
+      <td class="bold" style="color:#3C3489">gpt-5.1</td>
+      <td class="right">48.51%</td>
+      <td class="right">52.72%</td>
+      <td class="right">55.24%</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Analysis</h3>
+<p>All three scenarios land at <strong>100 PTU</strong> as the calculator ceiling for all three models — this assumes all 30 users execute all workloads simultaneously, which is unrealistic during testing. The recommended approach is to <strong>start at 25–50 PTU</strong> and let Data Zone Standard spillover absorb any peaks, then scale up based on observed utilization.</p>
+<p><strong style="color:#0C447C">gpt-4.1</strong> — most sensitive to input growth (57% → 68%). First model to need more PTUs when scaling users.</p>
+<p><strong style="color:#27500A">gpt-4.1-mini</strong> — barely moves (11% → 14%). Massive headroom regardless of chunk sizes.</p>
+<p><strong style="color:#3C3489">gpt-5.1</strong> — comfortable range (49% → 55%). Even at worst-case chunks, nearly half capacity available for growth.</p>
+
+<h3>Key takeaway</h3>
+<p>At testing scale (30 users), the calculator ceiling is 100 PTU for all models across all scenarios — but we <strong>do not need to provision the full ceiling</strong>. It is unlikely all users will execute all workloads in the same minute. We start conservatively at 25–50 PTU, let spillover handle bursts, and scale up based on real usage. Scaling up PTUs is easy; scaling down after purchasing an Azure Reservation wastes committed spend.</p>
+
+<h2>Recommendations and next steps</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-text"><strong>Deploy gpt-5.1 starting at minimum viable PTU</strong> (e.g. 25–50 PTU) — not the full 100 PTU ceiling. The calculator assumes all 30 users hit all workloads simultaneously, which is unrealistic for testing. Create a matching Data Zone Standard deployment for spillover.</div>
+</div>
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-text"><strong>Let spillover handle the peaks</strong> — excess traffic above provisioned capacity routes automatically to the Data Zone Standard deployment. No need to provision for the theoretical peak; spillover is the safety net while we observe real usage.</div>
+</div>
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-text"><strong>Run A/B quality tests</strong> with gpt-4.1-mini and gpt-4.1 using representative queries from our document corpus to evaluate answer quality differences against gpt-5.1.</div>
+</div>
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-text"><strong>Monitor actual token usage</strong> — use Azure Monitor metrics (<code>Azure OpenAI Tokens Total</code> split by <code>Token Type</code>) and provisioned utilization to determine when to scale up.</div>
+</div>
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-text"><strong>Scale up based on observed utilization</strong> — if provisioned utilization consistently exceeds 80% and spillover handles significant traffic, increase PTUs in 5 PTU increments until steady-state fits within provisioned capacity.</div>
+</div>
+<div class="step">
+  <div class="step-num">6</div>
+  <div class="step-text"><strong>Re-evaluate at production scale</strong> — when moving beyond 30 users, utilization differences become the primary cost driver. Fall back to gpt-4.1 (1:4 ratio) if output costs are too high, or gpt-4.1-mini for maximum throughput.</div>
+</div>
+<div class="step">
+  <div class="step-num">7</div>
+  <div class="step-text"><strong>Consider PTU reservations only after right-sizing</strong> — purchase reservations only after testing confirms the steady-state PTU requirement. Committing too early risks locking in spend on PTUs we don't need.</div>
+</div>
+
+<div class="footer">Prepared — April 2026</div>
+
+</div>
+</body>
+</html>
