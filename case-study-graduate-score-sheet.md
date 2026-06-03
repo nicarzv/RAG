@@ -16,7 +16,7 @@
 - [ ] Reading + ground rules (~5 min)
 - [ ] Part 1 — System design (15–20 min)
 - [ ] Part 2 — Debugging (15–20 min)
-- [ ] Part 3 — Communication (10 min)
+- [ ] Part 3 — Data model (12–15 min)
 - [ ] Wrap-up / candidate questions (~5 min)
 
 ---
@@ -72,17 +72,20 @@ _______________________________________________________________
 
 ---
 
-## Part 3 — Communication
+## Part 3 — Data Model
 
-**Setup:** Explain the bug to a non-technical Head of Finance in 2 minutes — no jargon. Follow-up: *"How confident are you this won't happen again? What guarantees can you give me?"*
+**Setup:** Get concrete about how the system stores its information. Technology-agnostic — no SQL or specific product. *"What are the main things the system stores, and how do they relate?"* Boxes and arrows are fine.
+Escalators available: what records get created for one 120-page doc · how the model represents version supersession + which is current (ties to Part 2) · where chunks live and how an answer traces back to the right place in the right version · how access/permissions are represented and what that means at search time · new-record-per-version vs update-in-place trade-off · storing text once vs duplicated in chunks · a document spanning/moving between departments.
 
 **Signals**
 
-- [ ] Explains root cause in plain language (e.g. cached/outdated copy analogy)
-- [ ] Acknowledges business impact before the fix
-- [ ] Avoids jargon and vagueness
-- [ ] On guarantees: honest, doesn't overpromise; offers process safeguards (date stamps, freshness flags, refresh process, always link the source)
-- [ ] Adjusts register from the earlier technical discussion to the executive
+- [ ] Identifies core entities unprompted (documents, versions, chunks/sections, users, access groups/permissions)
+- [ ] **Separates document from version**; models "current" explicitly (flag, pointer, or version + effective dates)
+- [ ] Traces a source reference down: answer → chunk → version → document (precise *and* version-correct)
+- [ ] Represents access as a relationship (users → groups → documents/departments), filters at search time
+- [ ] States a trade-off with reasoning (new-record vs in-place; normalize vs duplicate)
+- [ ] Closes the loop with Part 2: data model is where the "wrong version" bug is prevented
+- [ ] Asks clarifying questions (multi-department docs? keep history forever? per-doc or per-folder permissions?)
 
 **Quick read:**  ☐ Strong   ☐ Adequate   ☐ Weak
 
@@ -102,10 +105,10 @@ Score each competency 1–4. Multiply by weight to get the weighted points, then
 
 | Competency | Weight | Score (1–4) | Weighted (score × weight) |
 |-----------|:------:|:-----------:|:-------------------------:|
-| **Analytical thinking** | ×0.35 | | |
-| **Problem-solving under ambiguity** | ×0.30 | | |
-| **Communication** | ×0.25 | | |
-| **Technical foundation** | ×0.10 | | |
+| **Analytical thinking** | ×0.30 | | |
+| **Problem-solving under ambiguity** | ×0.25 | | |
+| **Data modeling & technical foundation** | ×0.30 | | |
+| **Communication** | ×0.15 | | |
 | | | **Weighted total (1–4):** | |
 
 **Scale reference:** 1 — Insufficient · 2 — Developing · 3 — Meets expectations · 4 — Exceeds expectations
@@ -115,8 +118,8 @@ Score each competency 1–4. Multiply by weight to get the weighted points, then
 
 - **Analytical thinking** — 1: can't decompose, needs heavy guidance · 2: obvious sub-problems with prompting, shallow · 3: breaks down independently, 2–3 hypotheses before committing · 4: structures without prompting, non-obvious connections, probing questions, systemic thinking.
 - **Problem-solving under ambiguity** — 1: freezes on incomplete info · 2: assumes but doesn't state it · 3: states assumptions, reasonable approaches, adapts to new info · 4: comfortable with ambiguity, separates known/unknown, reduces uncertainty, adjusts fluidly.
-- **Communication** — 1: disorganised, heavy jargon or hand-waving · 2: coherent but unstructured, some jargon leaks · 3: clear, structured, adjusts register technical→executive · 4: concise, good analogies, proactively structures, handles "guarantees" with maturity.
-- **Technical foundation** — 1: no intuition for how systems work · 2: basic storage/search/API understanding, can't connect · 3: reasonable mental model of data flow (process / store / retrieve as distinct steps) · 4: aware of trade-offs and failure modes without being told.
+- **Data modeling & technical foundation** — 1: one flat structure, no versions/chunks/relationships, no feel for data flow · 2: some entities with prompting, conflates document and version, can't connect storage/search/retrieval · 3: separates document from version and models "current", reasonable data-flow model, access as a relationship · 4: clean entity model with version-correct source refs, reasons about trade-offs and failure modes unprompted, links back to the Part 2 bug.
+- **Communication** — 1: disorganised, heavy jargon or hand-waving · 2: coherent but unstructured, hard to follow at points · 3: clear and structured across all parts, explains reasoning as they go · 4: concise, good analogies and structure, makes the interviewer's job easy.
 
 </details>
 

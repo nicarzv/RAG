@@ -1,10 +1,10 @@
 # Case Study Exercise — Graduate Technical Interview
 
 **Role:** Junior Developer / Graduate Engineer  
-**Duration:** 45–60 minutes live session  
+**Duration:** 50–65 minutes live session  
 **Format:** Candidate receives the scenario document at the start of the session. No preparation needed. Interviewer guides the conversation through three parts.  
-**What we're testing:** Analytical thinking, communication clarity, problem-solving under ambiguity  
-**What we're NOT testing:** Azure, RAG, AI/ML knowledge, specific frameworks
+**What we're testing:** Analytical thinking, problem-solving under ambiguity, structured technical / data-modeling thinking, communication clarity  
+**What we're NOT testing:** Azure, RAG, AI/ML knowledge, specific frameworks, or specific database technologies (SQL vs NoSQL, particular products)
 
 ---
 
@@ -16,7 +16,7 @@ Give the candidate the **Candidate Brief** (next section) printed or on screen. 
 - Reading + initial questions: 5 min
 - Part 1 (system design): 15–20 min
 - Part 2 (debugging): 15–20 min
-- Part 3 (communication): 10 min
+- Part 3 (data model): 12–15 min
 - Wrap-up / candidate questions: 5 min
 
 **Ground rules to tell the candidate:**
@@ -152,40 +152,60 @@ If they're strong, introduce ambiguity:
 
 ---
 
-## Part 3 — Communication (10 min)
+## Part 3 — Data Model (12–15 min)
 
-### Setup:
+### Setup — read this to the candidate:
 
-*"Final part. The Head of Finance — a non-technical executive — has heard about this bug and is concerned. She asks you in a meeting: 'I'm worried that employees are making financial decisions based on wrong information from this tool. Can you explain what went wrong and what we're doing about it?' You have 2 minutes."*
+*"Last part. We've talked about how the system behaves — now I want to get concrete about how we'd actually store the information behind it. Forget any specific database or technology; I'm not looking for SQL or any particular product. I just want to see how you'd organize the data — the main 'things' the system keeps track of and how they relate. Boxes and arrows, a list of tables, bullet points — whatever helps you think."*
 
 ### Ask the candidate:
 
-*"Give me your explanation as if I'm the Head of Finance. No technical jargon."*
+*"What are the main things — the entities — this system needs to store, and how do they relate to each other? Sketch it out however you like."*
 
-### Follow-up:
+### Follow-up prompts (use as needed):
 
-After their explanation:
-- *"She follows up: 'How confident are you this won't happen again? What guarantees can you give me?' What do you say?"*
+If they list entities but stay flat / vague, anchor them:
+- *"Walk me through what happens to a single document. A 120-page HR manual gets uploaded. What records get created for it in your model?"*
+
+Versioning — connect it back to Part 2:
+- *"In Part 2 the bug was that an old policy got returned instead of the current one. In your model, how do you represent that a new document replaces an old one — and how does the system know which version is the current one?"*
+
+Chunks / source references:
+- *"The system breaks each document into smaller searchable pieces and, when it answers, points back to the exact source. Where do those pieces live in your model, and how does an answer trace back to the right place in the right version?"*
+
+Access control:
+- *"Not everyone can see every document — HR files aren't open to all 5,000 employees. How would you represent who's allowed to see what? And what does that mean when someone runs a search?"*
+
+Force a trade-off:
+- *"When a policy is updated, do you create a brand-new record for the new version, or update the existing document record in place? What do you gain and lose either way?"*
+- (Alternative wrinkle) *"You're storing the full document text in one place and also the smaller pieces separately — so the same text exists twice. Is that a problem? When would you accept storing something twice?"*
+
+If they're strong, push:
+- *"How would you model a document that belongs to two departments, or one that moves from Finance to Legal? Does anything in your model break?"*
 
 ### What good looks like (evaluator notes):
 
 **Strong candidate:**
-- Explains the root cause in plain language: "The system was still using an outdated copy of the document. Think of it like Google sometimes showing a cached version of a page that's already been updated."
-- Doesn't hide behind jargon or vagueness
-- Acknowledges the impact before describing the fix: "You're right to be concerned — people could act on outdated information"
-- On the "guarantees" follow-up: is honest — doesn't promise 100% accuracy. A strong answer: "I can't guarantee a specific policy will never be outdated in the system, but here's what we can do: add a date stamp showing when the answer was last verified, flag answers from documents older than X months, and set up a regular refresh process. The tool should also always link to the source document so users can verify."
-- Shows maturity: suggests a process, not just a technical fix
+- Identifies the core entities without heavy prompting: documents, versions, chunks/sections, users, and access groups/permissions (and often a query or feedback log)
+- **Separates the logical "document" from its "versions"** — the single most important move. A document has many versions; one is current. Models "current" explicitly (a status flag, a pointer to the current version, or version numbers + effective dates) rather than leaving versions indistinguishable
+- Connects an answer's source reference all the way down: answer → chunk/section → version → document, so a citation is both precise (the right paragraph) and version-correct
+- Represents access as a *relationship* — e.g. users belong to groups, groups grant access to documents or departments — rather than stuffing a permission column onto the document. Recognizes search must filter by what the user is allowed to see
+- Reasons about a trade-off explicitly: new-record-per-version vs mutate-in-place (history vs simplicity), or normalization vs duplication (storing text once vs copied into chunks); states a choice and why
+- **Closes the loop with Part 2:** "if 'which version is current' isn't represented in the data, both versions look equal and search can return either — the data model is where you prevent that bug"
+- Asks clarifying questions: "Can a document belong to more than one department? Do we keep old versions forever? Are permissions per-document or per-folder?"
 
 **Adequate candidate:**
-- Gives a clear explanation without jargon
-- Proposes a fix
-- Somewhat honest about guarantees
+- Lists the main entities with some prompting (documents, users, maybe versions)
+- Has some notion of versioning, but may conflate "document" and "version" or model "current" weakly (e.g. just a date with no clear current flag)
+- Represents access in some form, even if coarse
+- Makes a trade-off choice when pushed, with shallow reasoning
 
 **Weak signals:**
-- Uses technical terms the executive wouldn't understand
-- Overpromises: "We'll fix it and it won't happen again"
-- Doesn't acknowledge the business impact
-- Can't adapt their communication style from the earlier technical discussion
+- One flat "documents" table with everything in it; no separation of version or chunk
+- No way to tell which version is current, or no concept of versions at all
+- Treats access control as an afterthought or ignores it
+- Can't reason about any trade-off; asks no clarifying questions
+- Jumps to a specific product ("we'd use MongoDB") instead of modeling the entities and relationships
 
 ---
 
@@ -193,15 +213,15 @@ After their explanation:
 
 | Competency | Weight | 1 — Insufficient | 2 — Developing | 3 — Meets expectations | 4 — Exceeds expectations |
 |-----------|--------|-------------------|-----------------|----------------------|------------------------|
-| **Analytical thinking** | 35% | Cannot decompose problems. Needs heavy guidance for each step. | Identifies obvious sub-problems with prompting. Shallow analysis. | Breaks down problems independently. Considers multiple angles. Identifies at least 2-3 hypotheses before committing. | Structures analysis without prompting. Identifies non-obvious connections. Asks probing clarifying questions. Thinks about systemic implications. |
-| **Problem-solving under ambiguity** | 30% | Freezes when information is incomplete. Waits for "the right answer." | Makes assumptions but doesn't state them. Needs guidance to handle unknowns. | States assumptions explicitly. Proposes reasonable approaches when information is missing. Adapts when new information is introduced. | Comfortable with ambiguity. Identifies what's known vs unknown. Proposes ways to reduce uncertainty. Adjusts approach fluidly when the problem changes mid-discussion. |
-| **Communication** | 25% | Disorganized explanations. Can't adjust to audience. Heavy jargon or vague hand-waving. | Coherent but unstructured. Some jargon leaks into non-technical explanation. | Clear, structured communication. Successfully adjusts register between technical discussion (Parts 1-2) and executive explanation (Part 3). | Concise and precise. Uses analogies effectively. Proactively structures explanations ("There are three things going on here..."). Handles the "guarantees" question with honesty and maturity. |
-| **Technical foundation** | 10% | No intuition about how systems work. | Basic understanding of data storage, search, APIs, but can't connect concepts. | Reasonable mental model of how data flows through a system. Understands processing pipelines, storage, and retrieval as distinct steps. | Shows awareness of trade-offs (speed vs quality, consistency vs availability). Intuition about failure modes without needing to be told. |
+| **Analytical thinking** | 30% | Cannot decompose problems. Needs heavy guidance for each step. | Identifies obvious sub-problems with prompting. Shallow analysis. | Breaks down problems independently. Considers multiple angles. Identifies at least 2-3 hypotheses before committing. | Structures analysis without prompting. Identifies non-obvious connections. Asks probing clarifying questions. Thinks about systemic implications. |
+| **Problem-solving under ambiguity** | 25% | Freezes when information is incomplete. Waits for "the right answer." | Makes assumptions but doesn't state them. Needs guidance to handle unknowns. | States assumptions explicitly. Proposes reasonable approaches when information is missing. Adapts when new information is introduced. | Comfortable with ambiguity. Identifies what's known vs unknown. Proposes ways to reduce uncertainty. Adjusts approach fluidly when the problem changes mid-discussion. |
+| **Data modeling & technical foundation** | 30% | One flat structure for everything. No concept of versions, chunks, or relationships. No intuition for how data flows through a system. | Lists some entities with prompting. Basic grasp of storage/search/retrieval but can't connect them, or conflates document and version. | Separates document from version and models "current" explicitly. Reasonable mental model of how data flows (process → store → retrieve as distinct steps). Represents access as a relationship. | Clean entity model with precise version-correct source references. Reasons about trade-offs (history vs simplicity, normalization vs duplication) and failure modes unprompted. Connects the data model back to the Part 2 versioning bug. |
+| **Communication** | 15% | Disorganized explanations. Heavy jargon or vague hand-waving throughout. | Coherent but unstructured. Hard to follow at points. | Clear, structured communication across all three parts. Explains reasoning as they go. | Concise and precise. Uses analogies and structure effectively ("There are three things going on here..."). Makes the interviewer's job easy. |
 
-**Overall scoring:**
-- **12–16:** Strong hire signal. Candidate demonstrates the analytical and communication skills needed to grow into the role.
+**Overall scoring** (sum the four scores for a 4–16 raw total):
+- **12–16:** Strong hire signal. Candidate demonstrates the analytical, structuring, and communication skills needed to grow into the role.
 - **8–11:** Potential hire. May need more mentoring, but shows enough foundation. Consider in context of other candidates.
-- **4–7:** Below bar. Significant gaps in analytical reasoning or communication that would make onboarding difficult.
+- **4–7:** Below bar. Significant gaps in analytical reasoning, structured thinking, or communication that would make onboarding difficult.
 
 **Important notes for interviewers:**
 - A graduate who asks 5 great clarifying questions and only gets halfway through Part 1 can score higher than one who rushes through everything with shallow answers.
