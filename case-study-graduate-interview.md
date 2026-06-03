@@ -3,8 +3,8 @@
 **Role:** Junior Developer / Graduate Engineer  
 **Duration:** 50–65 minutes live session  
 **Format:** Candidate receives the scenario document at the start of the session. No preparation needed. Interviewer guides the conversation through three parts.  
-**What we're testing:** Analytical thinking, problem-solving under ambiguity, structured technical / data-modeling thinking, communication clarity  
-**What we're NOT testing:** Azure, RAG, AI/ML knowledge, specific frameworks, or specific database technologies (SQL vs NoSQL, particular products)
+**What we're testing:** Analytical thinking, problem-solving under ambiguity, technical reasoning (search & similarity), communication clarity  
+**What we're NOT testing:** Azure, RAG, AI/ML knowledge, or specific frameworks, algorithms, or libraries by name (no need to know a particular search engine or technique)
 
 ---
 
@@ -16,7 +16,7 @@ Give the candidate the **Candidate Brief** (next section) printed or on screen. 
 - Reading + initial questions: 5 min
 - Part 1 (system design): 15–20 min
 - Part 2 (debugging): 15–20 min
-- Part 3 (data model): 12–15 min
+- Part 3 (search & similarity): 10–15 min
 - Wrap-up / candidate questions: 5 min
 
 **Ground rules to tell the candidate:**
@@ -50,7 +50,7 @@ Give the candidate the **Candidate Brief** (next section) printed or on screen. 
 
 ### Ask the candidate:
 
-*"Before writing any code, the team needs to understand the problem and sketch out a high-level approach. Walk me through how you'd think about building this system. Don't worry about specific technologies — I'm interested in how you break down the problem."*
+*"Before writing any code, the team needs to understand the problem and sketch out a high-level approach. Walk us through how you'd think about building this system. Don't worry about specific technologies — we're interested in how you break down the problem."*
 
 ### Follow-up prompts (use as needed to guide the conversation):
 
@@ -58,7 +58,7 @@ If the candidate jumps straight to implementation, pull them back:
 - *"Before we talk about how to build it — what are the main sub-problems we need to solve?"*
 
 If they give a high-level answer but don't go deeper:
-- *"You mentioned the system needs to understand questions. Let's say a user types 'How many vacation days do I get?' — walk me through what happens between the user pressing Enter and seeing an answer."*
+- *"You mentioned the system needs to understand questions. Let's say a user types 'How many vacation days do I get?' — walk us through what happens between the user pressing Enter and seeing an answer."*
 
 If they mention search but don't address the "120-page document" complaint:
 - *"Good. Now, imagine the search finds the right document — it's a 200-page HR policy manual. How do we get the user a specific answer instead of just linking the whole document?"*
@@ -84,11 +84,11 @@ Force a trade-off decision:
 - Describes a reasonable flow (user asks → system searches → shows answer)
 - Makes a trade-off decision but with shallow reasoning
 
-**Weak signals:**
-- Can't break the problem down without heavy guidance
-- Jumps to specific technologies ("we should use Elasticsearch") without understanding the problem
-- Doesn't think about edge cases or ask any clarifying questions
-- Can't articulate a trade-off — picks an option but can't explain why
+**Areas of concern:**
+- Finds it difficult to break the problem down without substantial guidance
+- Tends to reach for specific technologies ("we should use Elasticsearch") before understanding the problem
+- Doesn't yet consider edge cases or ask clarifying questions
+- Has trouble articulating a trade-off — picks an option but finds it hard to explain why
 
 ---
 
@@ -96,7 +96,7 @@ Force a trade-off decision:
 
 ### Setup — read this to the candidate:
 
-*"Good. Now imagine the system has been built and deployed. It's been running for 3 months. I'm going to describe a situation, and I want you to help me figure out what's going wrong."*
+*"Good. Now imagine the system has been built and deployed. It's been running for 3 months. We're going to describe a situation, and we'd like you to help us figure out what's going wrong."*
 
 *"We're getting this report from the finance department:"*
 
@@ -115,7 +115,7 @@ If they need help:
 - *"Think about the two phases: (1) when documents were processed and stored, and (2) when the user searches. Where in that pipeline could the old version still be active?"*
 
 Push to a systematic approach:
-- *"You have access to the system's logs, the document database, and the search index. Walk me through exactly what you'd check, in what order, and why."*
+- *"You have access to the system's logs, the document database, and the search index. Walk us through exactly what you'd check, in what order, and why."*
 
 Add a new wrinkle:
 - *"While investigating, you discover something else: the system actually has BOTH versions indexed — the old €5,000 policy and the new €10,000 policy. The search returned the old one. Why might the system prefer the older document over the newer one?"*
@@ -144,68 +144,48 @@ If they're strong, introduce ambiguity:
 - Proposes a reasonable investigation approach
 - Makes a decision on delete vs keep with some reasoning
 
-**Weak signals:**
-- Only considers one possibility and commits to it immediately
-- Can't describe an investigation process — jumps to solutions
-- On the design question, gives a binary answer with no nuance
-- Doesn't think about whether this is a systemic issue
+**Areas of concern:**
+- Tends to settle on a single possibility and commit to it straight away
+- Finds it difficult to describe an investigation process, moving to solutions before diagnosing
+- On the design question, gives a one-sided answer with limited nuance
+- Doesn't yet consider whether this might be a systemic issue
 
 ---
 
-## Part 3 — Data Model (12–15 min)
+## Part 3 — Search & Similarity (≤15 min)
+
+A single, focused but technically demanding problem — appropriate for a strong technical candidate. We're interested in how they reason about it, not in any named algorithm or library.
 
 ### Setup — read this to the candidate:
 
-*"Last part. We've talked about how the system behaves — now I want to get concrete about how we'd actually store the information behind it. Forget any specific database or technology; I'm not looking for SQL or any particular product. I just want to see how you'd organize the data — the main 'things' the system keeps track of and how they relate. Boxes and arrows, a list of tables, bullet points — whatever helps you think."*
+*"For the last part, we'd like to dig into the trickiest piece of the system: matching. We're not after any specific technique or library by name — we're interested in how you'd reason about it."*
 
-### Ask the candidate:
+### The problem:
 
-*"What are the main things — the entities — this system needs to store, and how do they relate to each other? Sketch it out however you like."*
+*"Two documents can describe the same thing in completely different words — one says 'parental leave,' another says 'family absence policy.' When someone asks a question, the system needs to find the genuinely relevant text even when the exact words don't match. How would you approach measuring how similar two pieces of text are — a question and a passage, or two passages — when the wording is different?"*
 
-### Follow-up prompts (use as needed):
+### Pushing further (use as the candidate gives you room):
 
-If they list entities but stay flat / vague, anchor them:
-- *"Walk me through what happens to a single document. A 120-page HR manual gets uploaded. What records get created for it in your model?"*
+- **Ranking:** *"Say twenty passages match to different degrees. How do you decide what to show first?"*
+- **Telling similar content apart:** *"Two results come back nearly identical — perhaps the same policy copied into two files. How would the system recognise they're saying the same thing, and what should it do about it?"*
+- **Where it breaks:** *"Where does word-matching let you down? What about two passages that look similar but mean opposite things — 'expenses are approved' versus 'expenses are not approved'?"*
+- **Trade-off:** *"How do you balance casting a wide net — catching everything possibly relevant — against keeping results precise?"*
 
-Versioning — connect it back to Part 2:
-- *"In Part 2 the bug was that an old policy got returned instead of the current one. In your model, how do you represent that a new document replaces an old one — and how does the system know which version is the current one?"*
-
-Chunks / source references:
-- *"The system breaks each document into smaller searchable pieces and, when it answers, points back to the exact source. Where do those pieces live in your model, and how does an answer trace back to the right place in the right version?"*
-
-Access control:
-- *"Not everyone can see every document — HR files aren't open to all 5,000 employees. How would you represent who's allowed to see what? And what does that mean when someone runs a search?"*
-
-Force a trade-off:
-- *"When a policy is updated, do you create a brand-new record for the new version, or update the existing document record in place? What do you gain and lose either way?"*
-- (Alternative wrinkle) *"You're storing the full document text in one place and also the smaller pieces separately — so the same text exists twice. Is that a problem? When would you accept storing something twice?"*
-
-If they're strong, push:
-- *"How would you model a document that belongs to two departments, or one that moves from Finance to Legal? Does anything in your model break?"*
-
-### What good looks like (evaluator notes):
+### What good looks like (evaluator notes)
 
 **Strong candidate:**
-- Identifies the core entities without heavy prompting: documents, versions, chunks/sections, users, and access groups/permissions (and often a query or feedback log)
-- **Separates the logical "document" from its "versions"** — the single most important move. A document has many versions; one is current. Models "current" explicitly (a status flag, a pointer to the current version, or version numbers + effective dates) rather than leaving versions indistinguishable
-- Connects an answer's source reference all the way down: answer → chunk/section → version → document, so a citation is both precise (the right paragraph) and version-correct
-- Represents access as a *relationship* — e.g. users belong to groups, groups grant access to documents or departments — rather than stuffing a permission column onto the document. Recognizes search must filter by what the user is allowed to see
-- Reasons about a trade-off explicitly: new-record-per-version vs mutate-in-place (history vs simplicity), or normalization vs duplication (storing text once vs copied into chunks); states a choice and why
-- **Closes the loop with Part 2:** "if 'which version is current' isn't represented in the data, both versions look equal and search can return either — the data model is where you prevent that bug"
-- Asks clarifying questions: "Can a document belong to more than one department? Do we keep old versions forever? Are permissions per-document or per-folder?"
+- Recognises that exact word-matching isn't enough, and reaches for some notion of *meaning* — turning text into a comparable form (weighting words, or representing text as numbers/vectors that capture meaning) and a similarity or distance measure between them
+- Distinguishes word-overlap similarity from meaning-based similarity, and sees why synonyms defeat pure keyword search
+- Treats similarity as a score: ranks results by it, and considers a threshold for what counts as a match
+- On near-duplicates: compares results to one another to spot high similarity, then groups or collapses them — or prefers the authoritative / current one
+- Names failure modes unprompted: negation and opposite meaning, very short vs long passages, common words dominating; weighs catching everything (recall) against staying precise
+- Asks useful clarifying questions: how long are the passages, do we have example questions to test against, how fast does matching need to be
 
 **Adequate candidate:**
-- Lists the main entities with some prompting (documents, users, maybe versions)
-- Has some notion of versioning, but may conflate "document" and "version" or model "current" weakly (e.g. just a date with no clear current flag)
-- Represents access in some form, even if coarse
-- Makes a trade-off choice when pushed, with shallow reasoning
+- Moves beyond exact matching with some prompting (synonyms, partial matches), has a rough notion of a similarity score and ordering results by it, and recognises duplicates exist even if the approach to them is simple
 
-**Weak signals:**
-- One flat "documents" table with everything in it; no separation of version or chunk
-- No way to tell which version is current, or no concept of versions at all
-- Treats access control as an afterthought or ignores it
-- Can't reason about any trade-off; asks no clarifying questions
-- Jumps to a specific product ("we'd use MongoDB") instead of modeling the entities and relationships
+**Areas of concern:**
+- Stays on exact keyword matching, with no notion of measuring degrees of similarity or ranking, and doesn't see how two differently-worded passages could mean the same thing
 
 ---
 
@@ -213,9 +193,9 @@ If they're strong, push:
 
 | Competency | Weight | 1 — Insufficient | 2 — Developing | 3 — Meets expectations | 4 — Exceeds expectations |
 |-----------|--------|-------------------|-----------------|----------------------|------------------------|
-| **Analytical thinking** | 30% | Cannot decompose problems. Needs heavy guidance for each step. | Identifies obvious sub-problems with prompting. Shallow analysis. | Breaks down problems independently. Considers multiple angles. Identifies at least 2-3 hypotheses before committing. | Structures analysis without prompting. Identifies non-obvious connections. Asks probing clarifying questions. Thinks about systemic implications. |
-| **Problem-solving under ambiguity** | 25% | Freezes when information is incomplete. Waits for "the right answer." | Makes assumptions but doesn't state them. Needs guidance to handle unknowns. | States assumptions explicitly. Proposes reasonable approaches when information is missing. Adapts when new information is introduced. | Comfortable with ambiguity. Identifies what's known vs unknown. Proposes ways to reduce uncertainty. Adjusts approach fluidly when the problem changes mid-discussion. |
-| **Data modeling & technical foundation** | 30% | One flat structure for everything. No concept of versions, chunks, or relationships. No intuition for how data flows through a system. | Lists some entities with prompting. Basic grasp of storage/search/retrieval but can't connect them, or conflates document and version. | Separates document from version and models "current" explicitly. Reasonable mental model of how data flows (process → store → retrieve as distinct steps). Represents access as a relationship. | Clean entity model with precise version-correct source references. Reasons about trade-offs (history vs simplicity, normalization vs duplication) and failure modes unprompted. Connects the data model back to the Part 2 versioning bug. |
+| **Analytical thinking** | 30% | Finds it difficult to decompose problems. Needs substantial guidance at each step. | Identifies obvious sub-problems with prompting. Shallow analysis. | Breaks down problems independently. Considers multiple angles. Identifies at least 2-3 hypotheses before committing. | Structures analysis without prompting. Identifies non-obvious connections. Asks probing clarifying questions. Thinks about systemic implications. |
+| **Problem-solving under ambiguity** | 25% | Finds it hard to proceed when information is incomplete. Tends to wait for "the right answer." | Makes assumptions but doesn't state them. Needs guidance to handle unknowns. | States assumptions explicitly. Proposes reasonable approaches when information is missing. Adapts when new information is introduced. | Comfortable with ambiguity. Identifies what's known vs unknown. Proposes ways to reduce uncertainty. Adjusts approach fluidly when the problem changes mid-discussion. |
+| **Technical reasoning (search & similarity)** | 30% | Stays on exact keyword matching; no notion of measuring degrees of similarity or ranking results. | Moves past exact matching with prompting (synonyms, partial matches); has a rough idea of a relevance score. | Reaches for a way to represent text and measure similarity beyond keywords; reasons about ranking and recognises near-duplicate results. | Distinguishes word-overlap from meaning-based similarity; reasons unprompted about failure modes (negation, common words), recall vs precision, and how to detect and collapse duplicate results. |
 | **Communication** | 15% | Disorganized explanations. Heavy jargon or vague hand-waving throughout. | Coherent but unstructured. Hard to follow at points. | Clear, structured communication across all three parts. Explains reasoning as they go. | Concise and precise. Uses analogies and structure effectively ("There are three things going on here..."). Makes the interviewer's job easy. |
 
 **Overall scoring** (sum the four scores for a 4–16 raw total):

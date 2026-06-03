@@ -16,7 +16,7 @@
 - [ ] Reading + ground rules (~5 min)
 - [ ] Part 1 — System design (15–20 min)
 - [ ] Part 2 — Debugging (15–20 min)
-- [ ] Part 3 — Data model (12–15 min)
+- [ ] Part 3 — Search & similarity (10–15 min)
 - [ ] Wrap-up / candidate questions (~5 min)
 
 ---
@@ -35,7 +35,7 @@ Escalators available: the "120-page document" complaint · versioning of 15,000 
 - [ ] Makes a clear trade-off recommendation **with reasoning** (or proposes a hybrid)
 - [ ] Asks clarifying questions (formats? languages? per-user access?)
 
-**Quick read:**  ☐ Strong   ☐ Adequate   ☐ Weak
+**Quick read:**  ☐ Strong   ☐ Adequate   ☐ Developing
 
 **Observations / verbatim quotes:**
 
@@ -60,7 +60,7 @@ Escalators available: why the old answer persists even if marked superseded · t
 - [ ] Treats delete-vs-keep as a design decision (e.g. keep but tag and de-prioritise, with a historical-search option)
 - [ ] Engineering mindset: "is this systemic or a one-off? how many other docs are affected?"
 
-**Quick read:**  ☐ Strong   ☐ Adequate   ☐ Weak
+**Quick read:**  ☐ Strong   ☐ Adequate   ☐ Developing
 
 **Observations / verbatim quotes:**
 
@@ -72,22 +72,21 @@ _______________________________________________________________
 
 ---
 
-## Part 3 — Data Model
+## Part 3 — Search & Similarity
 
-**Setup:** Get concrete about how the system stores its information. Technology-agnostic — no SQL or specific product. *"What are the main things the system stores, and how do they relate?"* Boxes and arrows are fine.
-Escalators available: what records get created for one 120-page doc · how the model represents version supersession + which is current (ties to Part 2) · where chunks live and how an answer traces back to the right place in the right version · how access/permissions are represented and what that means at search time · new-record-per-version vs update-in-place trade-off · storing text once vs duplicated in chunks · a document spanning/moving between departments.
+One focused but demanding problem (≤15 min). Technology-agnostic — no named algorithm or library. *"Two documents can describe the same thing in different words ('parental leave' vs 'family absence policy'). How would you measure how similar two pieces of text are when the wording differs?"*
+Probes: rank twenty partial matches · spot near-identical results (same policy in two files) and what to do · where word-matching breaks (negation: "approved" vs "not approved") · recall vs precision.
 
 **Signals**
 
-- [ ] Identifies core entities unprompted (documents, versions, chunks/sections, users, access groups/permissions)
-- [ ] **Separates document from version**; models "current" explicitly (flag, pointer, or version + effective dates)
-- [ ] Traces a source reference down: answer → chunk → version → document (precise *and* version-correct)
-- [ ] Represents access as a relationship (users → groups → documents/departments), filters at search time
-- [ ] States a trade-off with reasoning (new-record vs in-place; normalize vs duplicate)
-- [ ] Closes the loop with Part 2: data model is where the "wrong version" bug is prevented
-- [ ] Asks clarifying questions (multi-department docs? keep history forever? per-doc or per-folder permissions?)
+- [ ] Goes beyond exact word-matching; reaches for a way to capture *meaning* (weighting words, or text as numbers/vectors) and a similarity measure
+- [ ] Distinguishes word-overlap from meaning-based similarity; sees why synonyms defeat keyword search
+- [ ] Treats similarity as a score — ranks by it, considers a threshold
+- [ ] On near-duplicates: compares results to each other, then groups/collapses or prefers the authoritative one
+- [ ] Names failure modes unprompted (negation, common words, short vs long text); weighs recall vs precision
+- [ ] Asks useful clarifying questions (passage length, example queries to test, speed needed)
 
-**Quick read:**  ☐ Strong   ☐ Adequate   ☐ Weak
+**Quick read:**  ☐ Strong   ☐ Adequate   ☐ Developing
 
 **Observations / verbatim quotes:**
 
@@ -107,7 +106,7 @@ Score each competency 1–4. Multiply by weight to get the weighted points, then
 |-----------|:------:|:-----------:|:-------------------------:|
 | **Analytical thinking** | ×0.30 | | |
 | **Problem-solving under ambiguity** | ×0.25 | | |
-| **Data modeling & technical foundation** | ×0.30 | | |
+| **Technical reasoning (search & similarity)** | ×0.30 | | |
 | **Communication** | ×0.15 | | |
 | | | **Weighted total (1–4):** | |
 
@@ -116,9 +115,9 @@ Score each competency 1–4. Multiply by weight to get the weighted points, then
 <details>
 <summary>Level descriptors (expand if needed)</summary>
 
-- **Analytical thinking** — 1: can't decompose, needs heavy guidance · 2: obvious sub-problems with prompting, shallow · 3: breaks down independently, 2–3 hypotheses before committing · 4: structures without prompting, non-obvious connections, probing questions, systemic thinking.
-- **Problem-solving under ambiguity** — 1: freezes on incomplete info · 2: assumes but doesn't state it · 3: states assumptions, reasonable approaches, adapts to new info · 4: comfortable with ambiguity, separates known/unknown, reduces uncertainty, adjusts fluidly.
-- **Data modeling & technical foundation** — 1: one flat structure, no versions/chunks/relationships, no feel for data flow · 2: some entities with prompting, conflates document and version, can't connect storage/search/retrieval · 3: separates document from version and models "current", reasonable data-flow model, access as a relationship · 4: clean entity model with version-correct source refs, reasons about trade-offs and failure modes unprompted, links back to the Part 2 bug.
+- **Analytical thinking** — 1: finds it difficult to decompose, needs substantial guidance · 2: obvious sub-problems with prompting, shallow · 3: breaks down independently, 2–3 hypotheses before committing · 4: structures without prompting, non-obvious connections, probing questions, systemic thinking.
+- **Problem-solving under ambiguity** — 1: finds it hard to proceed on incomplete info · 2: assumes but doesn't state it · 3: states assumptions, reasonable approaches, adapts to new info · 4: comfortable with ambiguity, separates known/unknown, reduces uncertainty, adjusts fluidly.
+- **Technical reasoning (search & similarity)** — 1: stays on exact keyword matching, no notion of measuring similarity or ranking · 2: moves past exact matching with prompting (synonyms, partial matches), rough idea of a relevance score · 3: represents text and measures similarity beyond keywords, reasons about ranking, recognises near-duplicates · 4: distinguishes word-overlap from meaning-based similarity, reasons unprompted about failure modes (negation, common words), recall vs precision, and collapsing duplicate results.
 - **Communication** — 1: disorganised, heavy jargon or hand-waving · 2: coherent but unstructured, hard to follow at points · 3: clear and structured across all parts, explains reasoning as they go · 4: concise, good analogies and structure, makes the interviewer's job easy.
 
 </details>
