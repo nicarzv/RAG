@@ -16,7 +16,7 @@
 - [ ] Reading + ground rules (~5 min)
 - [ ] Part 1 — System design (15–20 min)
 - [ ] Part 2 — Debugging (15–20 min)
-- [ ] Part 3 — Search & similarity (10–15 min)
+- [ ] Part 3 — Designing a similarity score (10–15 min)
 - [ ] Wrap-up / candidate questions (~5 min)
 
 ---
@@ -72,19 +72,18 @@ _______________________________________________________________
 
 ---
 
-## Part 3 — Search & Similarity
+## Part 3 — Designing a Similarity Score
 
-One focused but demanding problem (≤15 min). Technology-agnostic — no named algorithm or library. *"Two documents can describe the same thing in different words ('parental leave' vs 'family absence policy'). How would you measure how similar two pieces of text are when the wording differs?"*
-Probes: rank twenty partial matches · spot near-identical results (same policy in two files) and what to do · where word-matching breaks (negation: "approved" vs "not approved") · recall vs precision.
+One concrete "propose an approach" problem, no hidden trick (≤15 min). Each document and the question are reduced to a set of distinct words. *"Given those two sets of words, how would you approach building a score for how well they match? Walk us through how you'd start, the aspects you'd consider, and how it would evolve."*
+Probes: would a 100-page doc be unfairly favoured (length) · should "the" count as much as "parental" (common words) · "parental leave" vs "family absence" (synonyms) · turning the score into a ranked list.
 
 **Signals**
 
-- [ ] Goes beyond exact word-matching; reaches for a way to capture *meaning* (weighting words, or text as numbers/vectors) and a similarity measure
-- [ ] Distinguishes word-overlap from meaning-based similarity; sees why synonyms defeat keyword search
-- [ ] Treats similarity as a score — ranks by it, considers a threshold
-- [ ] On near-duplicates: compares results to each other, then groups/collapses or prefers the authoritative one
-- [ ] Names failure modes unprompted (negation, common words, short vs long text); weighs recall vs precision
-- [ ] Asks useful clarifying questions (passage length, example queries to test, speed needed)
+- [ ] Starts simple and states it precisely (e.g. count the shared words)
+- [ ] Normalizes for length (divide by the union, or by question length) so long docs can't win by size
+- [ ] Down-weights common words vs rare distinctive ones (TF-IDF idea from first principles)
+- [ ] Identifies the limit of word-matching: synonyms never match → needs a sense of *meaning*
+- [ ] Structures the discussion: starts simple, names the aspects, justifies each choice
 
 **Quick read:**  ☐ Strong   ☐ Adequate   ☐ Developing
 
@@ -106,7 +105,7 @@ Score each competency 1–4. Multiply by weight to get the weighted points, then
 |-----------|:------:|:-----------:|:-------------------------:|
 | **Analytical thinking** | ×0.30 | | |
 | **Problem-solving under ambiguity** | ×0.25 | | |
-| **Technical reasoning (search & similarity)** | ×0.30 | | |
+| **Technical reasoning (algorithm design)** | ×0.30 | | |
 | **Communication** | ×0.15 | | |
 | | | **Weighted total (1–4):** | |
 
@@ -117,7 +116,7 @@ Score each competency 1–4. Multiply by weight to get the weighted points, then
 
 - **Analytical thinking** — 1: finds it difficult to decompose, needs substantial guidance · 2: obvious sub-problems with prompting, shallow · 3: breaks down independently, 2–3 hypotheses before committing · 4: structures without prompting, non-obvious connections, probing questions, systemic thinking.
 - **Problem-solving under ambiguity** — 1: finds it hard to proceed on incomplete info · 2: assumes but doesn't state it · 3: states assumptions, reasonable approaches, adapts to new info · 4: comfortable with ambiguity, separates known/unknown, reduces uncertainty, adjusts fluidly.
-- **Technical reasoning (search & similarity)** — 1: stays on exact keyword matching, no notion of measuring similarity or ranking · 2: moves past exact matching with prompting (synonyms, partial matches), rough idea of a relevance score · 3: represents text and measures similarity beyond keywords, reasons about ranking, recognises near-duplicates · 4: distinguishes word-overlap from meaning-based similarity, reasons unprompted about failure modes (negation, common words), recall vs precision, and collapsing duplicate results.
+- **Technical reasoning (algorithm design)** — 1: proposes counting shared words and stops, doesn't see length/common words distort the score even when prompted · 2: counts shared words and, with prompting, sees the need to normalize for length and/or down-weight common words · 3: starts simple, then normalizes for length and reasons about weighting words by how common they are · 4: starts simple and refines unprompted — normalizes, down-weights common words (TF-IDF from scratch), identifies the synonym limit, structures the discussion clearly.
 - **Communication** — 1: disorganised, heavy jargon or hand-waving · 2: coherent but unstructured, hard to follow at points · 3: clear and structured across all parts, explains reasoning as they go · 4: concise, good analogies and structure, makes the interviewer's job easy.
 
 </details>

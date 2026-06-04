@@ -3,7 +3,7 @@
 **Role:** Junior Developer / Graduate Engineer  
 **Duration:** 50–65 minutes live session  
 **Format:** Candidate receives the scenario document at the start of the session. No preparation needed. Interviewer guides the conversation through three parts.  
-**What we're testing:** Analytical thinking, problem-solving under ambiguity, technical reasoning (search & similarity), communication clarity  
+**What we're testing:** Analytical thinking, problem-solving under ambiguity, technical reasoning (algorithm design), communication clarity  
 **What we're NOT testing:** Azure, RAG, AI/ML knowledge, or specific frameworks, algorithms, or libraries by name (no need to know a particular search engine or technique)
 
 ---
@@ -16,7 +16,7 @@ Give the candidate the **Candidate Brief** (next section) printed or on screen. 
 - Reading + initial questions: 5 min
 - Part 1 (system design): 15–20 min
 - Part 2 (debugging): 15–20 min
-- Part 3 (search & similarity): 10–15 min
+- Part 3 (designing a similarity score): 10–15 min
 - Wrap-up / candidate questions: 5 min
 
 **Ground rules to tell the candidate:**
@@ -152,40 +152,39 @@ If they're strong, introduce ambiguity:
 
 ---
 
-## Part 3 — Search & Similarity (≤15 min)
+## Part 3 — Designing a Similarity Score (≤15 min)
 
-A single, focused but technically demanding problem — appropriate for a strong technical candidate. We're interested in how they reason about it, not in any named algorithm or library.
+A concrete, self-contained problem where the candidate proposes and reasons through an approach of their own. No hidden trick, no domain knowledge needed. We give them a simple representation so they actually build something rather than name a technique. The framing is deliberately open ("how would you approach this?") so we see how they start, structure their thinking, and refine.
 
 ### Setup — read this to the candidate:
 
-*"For the last part, we'd like to dig into the trickiest piece of the system: matching. We're not after any specific technique or library by name — we're interested in how you'd reason about it."*
+*"For the last part, a focused technical problem. To match a question to documents, the system needs to score how well each document matches the question. Let's make it concrete: imagine each document has been reduced to the set of distinct words it contains, and the question is also just a set of words."*
 
 ### The problem:
 
-*"Two documents can describe the same thing in completely different words — one says 'parental leave,' another says 'family absence policy.' When someone asks a question, the system needs to find the genuinely relevant text even when the exact words don't match. How would you approach measuring how similar two pieces of text are — a question and a passage, or two passages — when the wording is different?"*
+*"Given those two sets of words — the question's and a document's — how would you approach building a score for how well they match? Walk us through how you'd start: your first, simplest idea, the aspects you'd want to consider, and how your approach would evolve as you think it through."*
 
 ### Pushing further (use as the candidate gives you room):
 
-- **Ranking:** *"Say twenty passages match to different degrees. How do you decide what to show first?"*
-- **Telling similar content apart:** *"Two results come back nearly identical — perhaps the same policy copied into two files. How would the system recognise they're saying the same thing, and what should it do about it?"*
-- **Where it breaks:** *"Where does word-matching let you down? What about two passages that look similar but mean opposite things — 'expenses are approved' versus 'expenses are not approved'?"*
-- **Trade-off:** *"How do you balance casting a wide net — catching everything possibly relevant — against keeping results precise?"*
+- **Length:** *"A document that's 100 pages long contains a huge number of words. Would your score unfairly favour it? Why?"*
+- **Common words:** *"The word 'the' appears in almost every document. Should it count as much as the word 'parental'?"*
+- **Synonyms:** *"The question says 'parental leave,' but the right document says 'family absence.' What does your score do — and what would you need to handle that?"*
+- **Stretch:** *"How would you turn your score into a ranked list of the top documents for a query?"*
 
 ### What good looks like (evaluator notes)
 
 **Strong candidate:**
-- Recognises that exact word-matching isn't enough, and reaches for some notion of *meaning* — turning text into a comparable form (weighting words, or representing text as numbers/vectors that capture meaning) and a similarity or distance measure between them
-- Distinguishes word-overlap similarity from meaning-based similarity, and sees why synonyms defeat pure keyword search
-- Treats similarity as a score: ranks results by it, and considers a threshold for what counts as a match
-- On near-duplicates: compares results to one another to spot high similarity, then groups or collapses them — or prefers the authoritative / current one
-- Names failure modes unprompted: negation and opposite meaning, very short vs long passages, common words dominating; weighs catching everything (recall) against staying precise
-- Asks useful clarifying questions: how long are the passages, do we have example questions to test against, how fast does matching need to be
+- Starts with a clear, simple idea — e.g. counting the words the two sets share (the size of the overlap) — and states it precisely before refining
+- Quickly sees it needs normalizing: a longer document shares more words just by being long, so divides by something — the total distinct words across both (the union), or the number of words in the question — to make scores comparable across documents
+- Recognises not all words are equal: very common words ("the," "is") shouldn't count as much as rare, distinctive ones, and proposes down-weighting frequent words or removing them (this is the idea behind TF-IDF, reasoned from first principles — they don't need the name)
+- Identifies the real limit of word-matching: different words for the same idea (synonyms) never match, so genuinely relevant documents get missed — and gestures at needing a representation of *meaning*, not just exact words
+- Structures the discussion well — starts simple, names the aspects worth considering (length, word frequency, synonyms, ranking), and justifies each design choice ("I divide by the union so a document can't win just by being long")
 
 **Adequate candidate:**
-- Moves beyond exact matching with some prompting (synonyms, partial matches), has a rough notion of a similarity score and ordering results by it, and recognises duplicates exist even if the approach to them is simple
+- Proposes counting shared words and, with prompting, sees the need to normalize for length and/or down-weight common words; spots the synonym problem once it's pointed out
 
 **Areas of concern:**
-- Stays on exact keyword matching, with no notion of measuring degrees of similarity or ranking, and doesn't see how two differently-worded passages could mean the same thing
+- Proposes counting shared words and stops; doesn't see that document length or common words distort the score even when prompted; treats raw overlap as enough
 
 ---
 
@@ -195,7 +194,7 @@ A single, focused but technically demanding problem — appropriate for a strong
 |-----------|--------|-------------------|-----------------|----------------------|------------------------|
 | **Analytical thinking** | 30% | Finds it difficult to decompose problems. Needs substantial guidance at each step. | Identifies obvious sub-problems with prompting. Shallow analysis. | Breaks down problems independently. Considers multiple angles. Identifies at least 2-3 hypotheses before committing. | Structures analysis without prompting. Identifies non-obvious connections. Asks probing clarifying questions. Thinks about systemic implications. |
 | **Problem-solving under ambiguity** | 25% | Finds it hard to proceed when information is incomplete. Tends to wait for "the right answer." | Makes assumptions but doesn't state them. Needs guidance to handle unknowns. | States assumptions explicitly. Proposes reasonable approaches when information is missing. Adapts when new information is introduced. | Comfortable with ambiguity. Identifies what's known vs unknown. Proposes ways to reduce uncertainty. Adjusts approach fluidly when the problem changes mid-discussion. |
-| **Technical reasoning (search & similarity)** | 30% | Stays on exact keyword matching; no notion of measuring degrees of similarity or ranking results. | Moves past exact matching with prompting (synonyms, partial matches); has a rough idea of a relevance score. | Reaches for a way to represent text and measure similarity beyond keywords; reasons about ranking and recognises near-duplicate results. | Distinguishes word-overlap from meaning-based similarity; reasons unprompted about failure modes (negation, common words), recall vs precision, and how to detect and collapse duplicate results. |
+| **Technical reasoning (algorithm design)** | 30% | Proposes counting shared words and stops; doesn't see that length or common words distort the score even when prompted. | Counts shared words and, with prompting, sees the need to normalize for length and/or down-weight common words. | Starts simple, then normalizes for length and reasons about weighting words by how common they are. | Starts simple and refines unprompted — normalizes, down-weights common words (TF-IDF idea from scratch), identifies the synonym limit, and structures the whole discussion clearly. |
 | **Communication** | 15% | Disorganized explanations. Heavy jargon or vague hand-waving throughout. | Coherent but unstructured. Hard to follow at points. | Clear, structured communication across all three parts. Explains reasoning as they go. | Concise and precise. Uses analogies and structure effectively ("There are three things going on here..."). Makes the interviewer's job easy. |
 
 **Overall scoring** (sum the four scores for a 4–16 raw total):
